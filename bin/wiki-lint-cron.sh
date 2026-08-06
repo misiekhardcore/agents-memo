@@ -20,15 +20,15 @@
 
 set -e
 
-# Locate the plugin root. Prefer CLAUDE_PLUGIN_ROOT when set (in-session).
+# Locate the plugin root. Prefer MEMO_PLUGIN_PWD when set (in-session).
 # Otherwise derive it from $0 so cron invocations work without a session.
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+if [ -z "${MEMO_PLUGIN_PWD:-}" ]; then
   SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$0")
-  CLAUDE_PLUGIN_ROOT=$(dirname "$(dirname "$SCRIPT_PATH")")
-  export CLAUDE_PLUGIN_ROOT
+  MEMO_PLUGIN_PWD=$(dirname "$(dirname "$SCRIPT_PATH")")
+  export MEMO_PLUGIN_PWD
 fi
 
-VAULT=$("${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh") || exit 1
+VAULT=$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh") || exit 1
 
 claude -p "Run the wiki-lint skill on $VAULT. This is an unattended scheduled run — do not ask for confirmation. Auto-fix every issue the skill classifies as 'safe to auto-fix'. Write the lint report and report briefly. Commit and push the changes as 'chore: lint vault <datetime>'" || {
   echo "[wiki-lint-cron] lint skill failed — is Obsidian running?" >&2

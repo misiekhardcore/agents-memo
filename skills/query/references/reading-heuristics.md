@@ -24,7 +24,7 @@ Start with cheapest resource; stop when the question is answered.
 |3-5 wiki pages|~300 tokens each|Usually sufficient|
 |10+ wiki pages|expensive|Only for synthesis across the entire wiki|
 
-If hot.md has the answer, respond without reading further. For the full hot-cache protocol, see `${CLAUDE_PLUGIN_ROOT}/_shared/hot-cache-protocol.md`.
+If hot.md has the answer, respond without reading further. For the full hot-cache protocol, see `${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md`.
 
 ## Backlink Ranking
 

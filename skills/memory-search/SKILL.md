@@ -10,7 +10,7 @@ Quick vault lookups using obsidian CLI. For full synthesis with filing-back, use
 
 ## Vault I/O
 
-[Instructions on how to interact with the vault](Skill("vault-ops")).
+Read `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` first, then follow its instructions for vault I/O protocol.
 
 All vault reads use `scripts/obsidian-cli.sh` — never grep, never direct file tools.
 
@@ -51,5 +51,5 @@ All vault reads use `scripts/obsidian-cli.sh` — never grep, never direct file 
 
 ## Reference
 
-- `Skill("vault-ops")` — vault I/O protocol
+- `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` — vault I/O protocol
 - `scripts/obsidian-cli.sh` — CLI wrapper for all vault reads

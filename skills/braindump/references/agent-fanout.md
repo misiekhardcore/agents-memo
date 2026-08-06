@@ -8,7 +8,7 @@ cd "${VAULT_ROOT}" && pwd
 
 ## Dispatch
 
-Dispatch one `agents/capture.md` per independent chunk. Pass each agent:
+Dispatch one `agents/memory-capture.md` per independent chunk. Pass each agent:
 - `CHUNK` — the verbatim chunk text
 - `VAULT_ROOT` — `$VAULT_ROOT`
 - `SOURCE_PROJECT` — `basename(cwd)`

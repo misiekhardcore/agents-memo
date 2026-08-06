@@ -7,6 +7,7 @@ permissions:
   - bash: 'allow'
   - webfetch: 'allow'
   - websearch: 'allow'
+  - memo_dispatch: 'allow'
 disallowedTools: Agent Read Write Edit Glob Grep
 background: true
 ---

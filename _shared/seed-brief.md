@@ -8,10 +8,10 @@ The receiving agent uses the seed-brief to self-configure without re-researching
 
 ## When to Use
 
-Use seed-briefs when spawning worker agents via `Agent()` or calling protocol skills via `Skill()` to hand off context.
+Use seed-briefs when spawning worker agents via the `memo_dispatch` tool or calling protocol skills by reading their SKILL.md files to hand off context.
 
 Do NOT use for:
-- **Mid-cycle state within the same worktree.** Use `.claude/NOTES.md` for findings, failing AC, prior decisions.
+- **Mid-cycle state within the same worktree.** Use `NOTES.md` for findings, failing AC, prior decisions.
 - **Phase-to-phase handoff.** Lives in the GitHub issue body (## Requirements, ## Implementation plan).
 
 ## Format
@@ -57,13 +57,13 @@ payload:
 
 1. **Run repo/scope-preflight once at entry.**
 2. **Construct seed-brief** with all required fields.
-3. **Checkpoint NOTES.md** before every `Skill()` or `Agent()` call so the worktree retains sufficient state to reconstruct if the session dies mid-spawn.
+3. **Checkpoint NOTES.md** before every skill dispatch or agent spawn so the worktree retains sufficient state to reconstruct if the session dies mid-spawn.
 4. **Pass to every agent spawn.**
 5. **Verify completeness** on return: read spawned agent's output; if incomplete, re-spawn with updated `payload.progress`.
 
 ## Rules
 
 - **Caller-side only.** Receivers do not detect or parse as a mode switch — they just receive the context.
-- **Brief is spawn-time only.** Inter-cycle state within the same worktree lives in `.claude/NOTES.md`.
+- **Brief is spawn-time only.** Inter-cycle state within the same worktree lives in `NOTES.md`.
 - **No brief bloat.** Cap to required fields; verbose context overflows token budget.
 - **Sanity check every field.** Orchestrator verifies repo and branch against `git` before constructing.

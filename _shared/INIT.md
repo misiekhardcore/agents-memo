@@ -15,4 +15,4 @@ General coding, build, or test work in the current repo. Do not read the vault f
 
 ## Vault I/O
 
-[Instructions on how to interact with the vault](Skill("vault-ops")).
+Read `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` first, then follow its instructions.

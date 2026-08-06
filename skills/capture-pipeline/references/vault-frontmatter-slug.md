@@ -10,7 +10,7 @@ Resolution order:
 3. `agents-memo.vault_path` setting
 
 ```bash
-VAULT=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh") || {
+VAULT=$(bash "${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh") || {
   echo "No vault configured — run /wiki init first."
   exit 1
 }
@@ -58,7 +58,7 @@ No `title`, `topic`, `tags`, `source_project`, or `status` — daily files are a
 Use `scripts/slug.sh` (canonical implementation):
 
 ```bash
-slug=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/slug.sh" "$title" "$body")
+slug=$(bash "${MEMO_PLUGIN_PWD}/scripts/slug.sh" "$title" "$body")
 ```
 
 Output: lowercase, hyphenated, max 40 chars. Exit 1 if both inputs empty.

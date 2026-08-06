@@ -40,10 +40,16 @@ HOT="$VAULT/wiki/hot.md"
 [ -f "$HOT" ] || exit 0
 [ -s "$HOT" ] && exit 0
 
-# Restore from git if a previous version exists; otherwise drop the empty file.
+# Restore from git if a usable (non-empty) HEAD version exists; otherwise
+# drop the empty file. `git checkout HEAD --` resets index AND working tree
+# (the extension uses the same command), so a staged-empty blob is not frozen.
+# An empty blob committed at HEAD is treated as not-restorable — the restore
+# would only recreate the corruption.
 RESTORED=0
-if [ -d "$VAULT/.git" ]; then
-  if git -C "$VAULT" show "HEAD:wiki/hot.md" > "$HOT" 2>/dev/null; then
+# rev-parse --git-dir handles both plain repos (.git dir) and worktrees
+# (.git file) — a vault in a git worktree must restore, not remove.
+if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  if git -C "$VAULT" checkout HEAD -- "wiki/hot.md" 2>/dev/null && [ -s "$HOT" ]; then
     RESTORED=1
   fi
 fi
@@ -54,7 +60,7 @@ fi
 if [ "$RESTORED" -eq 1 ]; then
   MSG="[agents-memo] WARNING: your write left wiki/hot.md empty (0 bytes) — likely a failed or truncated content= parameter. The previous version from git has been restored. Please retry the hot.md update with non-empty content per the hot-cache protocol (~500 words, sections: Last Updated, Key Recent Facts, Recent Changes, Active Threads; overwrite completely)."
 else
-  MSG="[agents-memo] WARNING: your write left wiki/hot.md empty (0 bytes) and no prior version exists in git, so the empty file was removed. Please retry the hot.md update with non-empty content per the hot-cache protocol."
+  MSG="[agents-memo] WARNING: your write left wiki/hot.md empty (0 bytes) and no usable (non-empty) prior version exists in git, so the empty file was removed. Please retry the hot.md update with non-empty content per the hot-cache protocol."
 fi
 
 jq -n --arg msg "$MSG" '{

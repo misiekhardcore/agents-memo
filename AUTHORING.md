@@ -54,8 +54,8 @@ Name files after the phase or topic they own: `detection.md`, `scope.md`, `gates
 Place `Read` at the step that activates the concern — never at the top:
 
 ```
-Read ${CLAUDE_PLUGIN_ROOT}/_shared/<file>.md
-Read ${CLAUDE_PLUGIN_ROOT}/skills/<name>/references/<concern>.md
+Read ${MEMO_PLUGIN_PWD}/_shared/<file>.md
+Read ${MEMO_PLUGIN_PWD}/skills/<name>/references/<concern>.md
 ```
 
 **Phase-gated:** Read after the decision branch that activates the phase.
@@ -70,9 +70,9 @@ Read ${CLAUDE_PLUGIN_ROOT}/skills/<name>/references/<concern>.md
 All vault I/O via `scripts/obsidian-cli.sh`:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh" read path=wiki/hot.md
-"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh" create path=wiki/concepts/foo.md content="..."
-"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh" append path=wiki/index.md content="- New entry"
+"${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" read path=wiki/hot.md
+"${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" create path=wiki/concepts/foo.md content="..."
+"${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" append path=wiki/index.md content="- New entry"
 ```
 
 PreToolUse hook transparently rewrites raw `obsidian <verb> ...` calls. For error handling, exit codes, and escape hatches, see `_shared/cli.md`.

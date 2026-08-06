@@ -43,7 +43,7 @@ echo "1. Fresh vault — all expected files are created"
 VAULT=$(mktemp -d)
 trap 'rm -rf "$VAULT"' EXIT
 
-export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
+export MEMO_PLUGIN_PWD="$PLUGIN_ROOT"
 mkdir -p "$VAULT/wiki/concepts" "$VAULT/wiki/entities" "$VAULT/wiki/sources" "$VAULT/wiki/questions"
 
 bash "$SEED_SCRIPT" "$VAULT"

@@ -9,24 +9,25 @@
 # must be identical.  Divergence indicates non-determinism in lint-scan.sh.
 #
 # Usage:
-#   CLAUDE_PLUGIN_ROOT=/path/to/plugin lint-verify-consistency.sh
+#   MEMO_PLUGIN_PWD=/path/to/plugin lint-verify-consistency.sh
 #
 # Exit codes:
 #   0 — consistent (hashes match)
 #   1 — divergent (hashes differ)
-#   2 — dependency error or CLAUDE_PLUGIN_ROOT unset
+#   2 — dependency error
 
 set -euo pipefail
 
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  echo "lint-verify: CLAUDE_PLUGIN_ROOT is unset" >&2
-  exit 2
-fi
+# Locate the plugin root. Under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+# the command; under Claude Code it is unset, so fall back to script location.
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export MEMO_PLUGIN_PWD
+
 command -v jq        >/dev/null 2>&1 || { echo "lint-verify: jq required" >&2;        exit 2; }
 command -v sha256sum >/dev/null 2>&1 || { echo "lint-verify: sha256sum required" >&2; exit 2; }
 
-SCAN="${CLAUDE_PLUGIN_ROOT}/scripts/lint-scan.sh"
-VAULT="$("${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh")" || {
+SCAN="${MEMO_PLUGIN_PWD}/scripts/lint-scan.sh"
+VAULT="$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh")" || {
   echo "lint-verify: could not resolve vault" >&2; exit 2
 }
 TODAY=$(date +%F)
@@ -37,11 +38,11 @@ TMP2=$(mktemp)
 trap 'rm -f "$TMP1" "$TMP2"' EXIT
 
 echo "lint-verify: run 1..."
-CLAUDE_PLUGIN_ROOT="$CLAUDE_PLUGIN_ROOT" bash "$SCAN" >/dev/null
+MEMO_PLUGIN_PWD="$MEMO_PLUGIN_PWD" bash "$SCAN" >/dev/null
 cp "$DATA_PATH" "$TMP1"
 
 echo "lint-verify: run 2..."
-CLAUDE_PLUGIN_ROOT="$CLAUDE_PLUGIN_ROOT" bash "$SCAN" >/dev/null
+MEMO_PLUGIN_PWD="$MEMO_PLUGIN_PWD" bash "$SCAN" >/dev/null
 cp "$DATA_PATH" "$TMP2"
 
 HASH1=$(jq -S 'del(.scan_date)' "$TMP1" | sha256sum | cut -d' ' -f1)

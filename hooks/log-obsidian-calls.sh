@@ -4,7 +4,12 @@
 #
 # Silent on any failure — this hook must never disrupt a turn.
 
-VAULT=$("${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh") 2>/dev/null || exit 0
+# Locate the plugin root. Under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+# the command; under Claude Code it is unset, so fall back to script location.
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export MEMO_PLUGIN_PWD
+
+VAULT=$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh") 2>/dev/null || exit 0
 [ -d "$VAULT" ] || exit 0
 
 # jq is a hard prerequisite for this hook; exit silently if absent.
@@ -45,7 +50,9 @@ printf '%s\t%s\t%s\n' "$TS" "${VERB:-?}" "${KEY_ARG:-}" \
 
 case "${VERB:-}" in
   create|append|prepend|create-or-append|property:set|property:remove|eval)
-    [ -d "$VAULT/.git" ] \
+    # rev-parse --git-dir handles worktree vaults (.git file) too, matching
+    # guard-hot-cache.sh — a worktree vault must auto-commit, not skip.
+    git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1 \
       && git -C "$VAULT" add wiki/ .raw/ 2>/dev/null \
       && (git -C "$VAULT" diff --cached --quiet \
            || git -C "$VAULT" commit -m "wiki: auto-commit $(date '+%Y-%m-%d %H:%M')" 2>/dev/null) \

@@ -24,6 +24,11 @@
 
 set -euo pipefail
 
+# Locate the plugin root. Under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+# the command; under Claude Code it is unset, so fall back to script location.
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export MEMO_PLUGIN_PWD
+
 if [ "$#" -ne 3 ]; then
   echo "usage: index-section-insert.sh <path> <section> <entry>" >&2
   exit 1
@@ -33,7 +38,7 @@ path="$1"
 section="$2"
 entry="$3"
 
-cli="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}/scripts/obsidian-cli.sh"
+cli="${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh"
 
 current=$("$cli" read "file=$path")
 
