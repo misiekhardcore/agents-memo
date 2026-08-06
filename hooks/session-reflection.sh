@@ -9,7 +9,12 @@
 
 set -e
 
-VAULT=$("${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh") 2>/dev/null || exit 0
+# Locate the plugin root. Under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+# the command; under Claude Code it is unset, so fall back to script location.
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export MEMO_PLUGIN_PWD
+
+VAULT=$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh") 2>/dev/null || exit 0
 [ -d "$VAULT" ] || exit 0
 
 SCRATCH="$VAULT/.session-scratch.log"

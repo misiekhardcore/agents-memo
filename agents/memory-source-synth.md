@@ -29,7 +29,7 @@ Abort if output ≠ `VAULT_ROOT`.
 ## Process
 
 1. Read `wiki/index.md`: `obsidian read path=wiki/index.md`
-2. Derive slug: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slug.sh" "<title>"`
+2. Derive slug: `bash "${MEMO_PLUGIN_PWD}/scripts/slug.sh" "<title>"`
 3. Create source summary `wiki/sources/<slug>.md` (2–4 paragraphs: claims, methodology, relevance to `RESEARCH_TOPIC`). Use frontmatter schema from `_shared/frontmatter.md`.
 4. Create/update entity pages `wiki/entities/` (persons, orgs, products, repos). Check index first.
 5. Create/update concept pages `wiki/concepts/` (ideas, frameworks). Check index first.

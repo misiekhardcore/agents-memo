@@ -2,7 +2,7 @@
 
 **Scope.** Authoritative reference for the Obsidian CLI mechanics: invocation, full verb table with output formats, exit codes, `content=` escape rules, canvas handling, and the re-spike procedure. All behaviors verified by `scripts/cli-spike.sh` (results in `tests/spike-results/`).
 
-For skill-author operational patterns (when/why to call each verb, slugging, indexing, hot-cache protocol, active enforcement, canonical bypass list) invoke `Skill("vault-ops")`.
+For skill-author operational patterns (when/why to call each verb, slugging, indexing, hot-cache protocol, active enforcement, canonical bypass list) Read `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` first, then follow its instructions.
 
 Read on demand.
 
@@ -11,7 +11,7 @@ Read on demand.
 All vault operations through `scripts/obsidian-cli.sh` (PreToolUse hook rewrites bare `obsidian` calls transparently).
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh" read path=wiki/hot.md
+"${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" read path=wiki/hot.md
 ```
 
 **vault= is name-only** (basename, not path). Wrapper derives it automatically.
@@ -22,7 +22,7 @@ All vault operations through `scripts/obsidian-cli.sh` (PreToolUse hook rewrites
 
 ## 2. Exit codes
 
-See `${CLAUDE_PLUGIN_ROOT}/_shared/cli-reference.md` for full exit-code table and escape hatches.
+See `${MEMO_PLUGIN_PWD}/_shared/cli-reference.md` for full exit-code table and escape hatches.
 
 ## 3. Verb reference
 
@@ -484,7 +484,7 @@ CLI requires Obsidian running; cron context fails at pre-flight (exit 3). See is
 
 ## 5. Documented exceptions
 
-For the canonical list of paths where direct `Read` / `Write` / `Edit` on vault files is permitted because the CLI cannot serve the operation, see `Skill("vault-ops")`. That list (binary files, canvas, JSON admin artifacts, `.raw/**` reads) is enforced by `hooks/block-direct-vault-io.sh`.
+For the canonical list of paths where direct `Read` / `Write` / `Edit` on vault files is permitted because the CLI cannot serve the operation, see `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md`. That list (binary files, canvas, JSON admin artifacts, `.raw/**` reads) is enforced by `hooks/block-direct-vault-io.sh`.
 
 Non-vault exceptions still relevant to the CLI:
 

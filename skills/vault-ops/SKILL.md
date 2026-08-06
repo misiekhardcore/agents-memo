@@ -7,7 +7,7 @@ user-invocable: false
 
 Single source of truth for **skill-author operational patterns** — when and why to call each CLI verb, the slugification pipeline, indexing/log/hot-cache protocols, active enforcement, and the canonical bypass list. Skills reference this file from their `## Vault I/O` section instead of restating patterns inline.
 
-For the CLI mechanics themselves — full verb table, output formats, exit codes, `content=` escape rules, canvas handling, re-spike procedure — see `${CLAUDE_PLUGIN_ROOT}/_shared/cli.md`.
+For the CLI mechanics themselves — full verb table, output formats, exit codes, `content=` escape rules, canvas handling, re-spike procedure — see `${MEMO_PLUGIN_PWD}/_shared/cli.md`.
 
 ## 1. CLI verbs at a glance
 
@@ -35,7 +35,7 @@ Never hand-craft slugs. Always use the `slug.sh` script to ensure Unicode normal
 
 ```bash
 # Pattern: Title/URL -> Slug
-slug=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/slug.sh" "<input_string>")
+slug=$(bash "${MEMO_PLUGIN_PWD}/scripts/slug.sh" "<input_string>")
 ```
 
 ## 3. Indexing & Log Patterns
@@ -49,7 +49,7 @@ Use the read-splice-overwrite pattern via `scripts/index-section-insert.sh`.
 - **Logic:** Inserts immediately after the matching heading (e.g., `## Concepts`).
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/index-section-insert.sh" \
+bash "${MEMO_PLUGIN_PWD}/scripts/index-section-insert.sh" \
   wiki/index.md "$section_heading" "$new_entry"
 ```
 
@@ -65,7 +65,7 @@ obsidian prepend file=wiki/log.md content="## [YYYY-MM-DD] <op> | <title>\n- <de
 
 Maintain `wiki/hot.md` after every operation.
 
-- **Format:** Follow `Skill("hot-cache-protocol")`.
+- **Format:** Follow `${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md`.
 - **Operation:** Overwrite existing content to keep it a concise (~500 word) summary of recent state — `obsidian create path=wiki/hot.md overwrite=true content="..."`.
 
 ## 5. Active Enforcement

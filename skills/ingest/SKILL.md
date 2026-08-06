@@ -16,7 +16,7 @@ Read source, write wiki pages, cross-reference everything. Single source typical
 ## Process
 1. **Pre-process**: Determine input type (URL/image/file path) and follow the type-specific flow in `references/flows.md`. Archive result to `.raw/` with frontmatter (`source_url`, `fetched`). Hash-check `.raw/.manifest.json` to skip re-processed sources.
 2. **Collaborate**: Discuss emphasis, granularity, context with user. Wait for response unless "auto-ingest" or "just ingest it".
-3. **Extract**: Dispatch `agents/ingest.md` with `source_path`, `vault_path`, `emphasis`. Agent creates/updates pages.
+3. **Extract**: Dispatch `agents/memory-ingest.md` with `source_path`, `vault_path`, `emphasis`. Agent creates/updates pages.
 4. **Reconcile**: Update `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`.
 
 ## Rules

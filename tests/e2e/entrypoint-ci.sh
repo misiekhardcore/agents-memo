@@ -27,7 +27,7 @@ fi
 echo "entrypoint-ci: scaffolding vault at $VAULT_PATH"
 rm -rf "$VAULT_PATH"
 mkdir -p "$VAULT_PATH"
-CLAUDE_PLUGIN_ROOT="$PLUGIN_SRC" bash "$PLUGIN_SRC/bin/setup-vault.sh" "$VAULT_PATH"
+MEMO_PLUGIN_PWD="$PLUGIN_SRC" bash "$PLUGIN_SRC/bin/setup-vault.sh" "$VAULT_PATH"
 
 # 3. Seed the two files cli-smoke.sh assumes exist (`wiki/hot.md` for the
 # read+probe assertions, `wiki/index.md` for the backlinks assertion).

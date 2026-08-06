@@ -6,19 +6,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; \"${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh\" version >/dev/null 2>&1 || { echo \"Obsidian 1.12.7+ required and Obsidian must be running with the vault open\" >&2; exit 0; }"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; \"${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh\" version >/dev/null 2>&1 || { echo \"Obsidian 1.12.7+ required and Obsidian must be running with the vault open\" >&2; exit 0; }"
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\" >/dev/null 2>&1 || exit 0; [ -f \"${CLAUDE_PLUGIN_ROOT}/_shared/INIT.md\" ] || exit 0; envsubst '$CLAUDE_PLUGIN_ROOT' < \"${CLAUDE_PLUGIN_ROOT}/_shared/INIT.md\"; printf '\\n[agents-memo] Session init injected above (_shared/INIT.md). Silently absorb this context; do not announce it.\\n'; exit 0"
+            "command": "\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\" >/dev/null 2>&1 || exit 0; [ -f \"${MEMO_PLUGIN_PWD}/_shared/INIT.md\" ] || exit 0; export MEMO_PLUGIN_PWD=\"${MEMO_PLUGIN_PWD}\"; envsubst '$MEMO_PLUGIN_PWD $MEMO_PLUGIN_PWD' < \"${MEMO_PLUGIN_PWD}/_shared/INIT.md\"; printf '\\n[agents-memo] Session init injected above (_shared/INIT.md). Silently absorb this context; do not announce it.\\n'; exit 0"
           },
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.sh\" bootstrap_read_hot on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/hot.md\" ]; then cat \"$VAULT/wiki/hot.md\"; printf '\\n\\n[agents-memo] wiki/hot.md was injected above (bootstrap_read_hot=always). Silently absorb this context; do not announce it.\\n'; fi; exit 0"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-config.sh\" bootstrap_read_hot on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/hot.md\" ]; then cat \"$VAULT/wiki/hot.md\"; printf '\\n\\n[agents-memo] wiki/hot.md was injected above (bootstrap_read_hot=always). Silently absorb this context; do not announce it.\\n'; fi; exit 0"
           },
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.sh\" bootstrap_read_index on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/index.md\" ]; then cat \"$VAULT/wiki/index.md\"; printf '\\n\\n[agents-memo] wiki/index.md was injected above (bootstrap_read_index=always). Silently absorb this context; do not announce it.\\n'; fi; exit 0"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-config.sh\" bootstrap_read_index on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/index.md\" ]; then cat \"$VAULT/wiki/index.md\"; printf '\\n\\n[agents-memo] wiki/index.md was injected above (bootstrap_read_index=always). Silently absorb this context; do not announce it.\\n'; fi; exit 0"
           }
         ]
       }
@@ -29,15 +29,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\" >/dev/null 2>&1 || exit 0; [ -f \"${CLAUDE_PLUGIN_ROOT}/_shared/INIT.md\" ] || exit 0; envsubst '$CLAUDE_PLUGIN_ROOT' < \"${CLAUDE_PLUGIN_ROOT}/_shared/INIT.md\"; printf '\\n[agents-memo] Session init injected above (_shared/INIT.md). Silently absorb this context; do not announce it.\\n'; exit 0"
+            "command": "\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\" >/dev/null 2>&1 || exit 0; [ -f \"${MEMO_PLUGIN_PWD}/_shared/INIT.md\" ] || exit 0; export MEMO_PLUGIN_PWD=\"${MEMO_PLUGIN_PWD}\"; envsubst '$MEMO_PLUGIN_PWD $MEMO_PLUGIN_PWD' < \"${MEMO_PLUGIN_PWD}/_shared/INIT.md\"; printf '\\n[agents-memo] Session init injected above (_shared/INIT.md). Silently absorb this context; do not announce it.\\n'; exit 0"
           },
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.sh\" bootstrap_read_hot on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/hot.md\" ]; then cat \"$VAULT/wiki/hot.md\"; printf '\\n\\n[agents-memo] wiki/hot.md was re-injected above after compaction (bootstrap_read_hot=always). Silently absorb this context to restore the hot cache; do not announce it.\\n'; fi; exit 0"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-config.sh\" bootstrap_read_hot on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/hot.md\" ]; then cat \"$VAULT/wiki/hot.md\"; printf '\\n\\n[agents-memo] wiki/hot.md was re-injected above after compaction (bootstrap_read_hot=always). Silently absorb this context to restore the hot cache; do not announce it.\\n'; fi; exit 0"
           },
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.sh\" bootstrap_read_index on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/index.md\" ]; then cat \"$VAULT/wiki/index.md\"; printf '\\n\\n[agents-memo] wiki/index.md was re-injected above after compaction (bootstrap_read_index=always). Silently absorb this context to restore the index; do not announce it.\\n'; fi; exit 0"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; MODE=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-config.sh\" bootstrap_read_index on-demand); if [ \"$MODE\" = \"always\" ] && [ -f \"$VAULT/wiki/index.md\" ]; then cat \"$VAULT/wiki/index.md\"; printf '\\n\\n[agents-memo] wiki/index.md was re-injected above after compaction (bootstrap_read_index=always). Silently absorb this context to restore the index; do not announce it.\\n'; fi; exit 0"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/obsidian-cli-rewrite.sh\""
+            "command": "\"${MEMO_PLUGIN_PWD}/hooks/obsidian-cli-rewrite.sh\""
           }
         ]
       },
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/block-direct-vault-io.sh\""
+            "command": "\"${MEMO_PLUGIN_PWD}/hooks/block-direct-vault-io.sh\""
           }
         ]
       }
@@ -68,11 +68,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/guard-hot-cache.sh\""
+            "command": "\"${MEMO_PLUGIN_PWD}/hooks/guard-hot-cache.sh\""
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/log-obsidian-calls.sh\""
+            "command": "\"${MEMO_PLUGIN_PWD}/hooks/log-obsidian-calls.sh\""
           }
         ]
       },
@@ -81,11 +81,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; [ -d \"$VAULT/.git\" ] && git -C \"$VAULT\" add wiki/ .raw/ 2>/dev/null && (git -C \"$VAULT\" diff --cached --quiet || git -C \"$VAULT\" commit -m \"wiki: auto-commit $(date '+%Y-%m-%d %H:%M')\" 2>/dev/null) || true"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; [ -d \"$VAULT/.git\" ] && git -C \"$VAULT\" add wiki/ .raw/ 2>/dev/null && (git -C \"$VAULT\" diff --cached --quiet || git -C \"$VAULT\" commit -m \"wiki: auto-commit $(date '+%Y-%m-%d %H:%M')\" 2>/dev/null) || true"
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh\""
+            "command": "\"${MEMO_PLUGIN_PWD}/hooks/log-tool-use.sh\""
           }
         ]
       }
@@ -96,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "VAULT=$(\"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh\") || exit 0; [ -d \"$VAULT/wiki\" ] && [ -d \"$VAULT/.git\" ] && git -C \"$VAULT\" diff --name-only HEAD 2>/dev/null | grep -q '^wiki/' && echo 'WIKI_CHANGED: Wiki pages were modified this session. Please update $VAULT/wiki/hot.md following the hot-cache protocol at ${CLAUDE_PLUGIN_ROOT}/_shared/hot-cache-protocol.md (under 500 words; sections: Last Updated, Key Recent Facts, Recent Changes, Active Threads; overwrite completely; factual cache, not a journal).' || true"
+            "command": "VAULT=$(\"${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh\") || exit 0; [ -d \"$VAULT/wiki\" ] && [ -d \"$VAULT/.git\" ] && git -C \"$VAULT\" diff --name-only HEAD 2>/dev/null | grep -q '^wiki/' && echo 'WIKI_CHANGED: Wiki pages were modified this session. Please update $VAULT/wiki/hot.md following the hot-cache protocol at ${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md (under 500 words; sections: Last Updated, Key Recent Facts, Recent Changes, Active Threads; overwrite completely; factual cache, not a journal).' || true"
           }
         ]
       }
@@ -107,7 +107,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "nohup \"${CLAUDE_PLUGIN_ROOT}/hooks/session-reflection.sh\" >/dev/null 2>&1 < /dev/null &"
+            "command": "nohup \"${MEMO_PLUGIN_PWD}/hooks/session-reflection.sh\" >/dev/null 2>&1 < /dev/null &"
           }
         ]
       }

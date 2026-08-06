@@ -2,11 +2,11 @@
 
 ## Pipeline
 
-1. **Resolve vault** [§1](${CLAUDE_PLUGIN_ROOT}/_shared/capture-pipeline.md#1-vault-path-resolution). Abort if unconfigured.
+1. **Resolve vault** [§1](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md). Abort if unconfigured.
 2. **Parse date** (no arg = today, validate `YYYY-MM-DD`, reject future dates).
 3. **Read daily file** `obsidian read path=daily/YYYY-MM-DD.md`. Abort if missing.
 4. **Scan for content**: count `## Captures` bullets. If zero, list pending notes via `obsidian files dir=notes format=json`; list wiki candidates via `obsidian files dir=wiki format=json`, then per candidate run `obsidian properties path=<file>` and keep only those with `created:` or `updated:` matching the date. Abort if nothing remains.
-5. **Gather input**: if >3 matched files, dispatch `agents/gather.md` (max 20); else read each via `obsidian read path=<file>`. Always read `wiki/hot.md` and `wiki/index.md`.
+5. **Gather input**: if >3 matched files, dispatch `agents/memory-gather.md` (max 20); else read each via `obsidian read path=<file>`. Always read `wiki/hot.md` and `wiki/index.md`.
 6. **LLM synthesis** via template below.
 7. **Update in-memory**: insert or replace `## Summary` section (idempotent); add optional `## Follow-ups` with bullets. Bump `updated:` frontmatter.
 8. **Atomic write** via `obsidian create path=daily/YYYY-MM-DD.md overwrite=true content=...`

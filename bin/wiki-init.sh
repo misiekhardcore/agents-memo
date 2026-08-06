@@ -18,17 +18,17 @@ if [ -z "$VAULT" ]; then
   exit 0
 fi
 
-# Locate the plugin root. Prefer CLAUDE_PLUGIN_ROOT when set (in-session).
+# Locate the plugin root. Prefer MEMO_PLUGIN_PWD when set (in-session).
 # Otherwise derive it from $0 so standalone invocations work.
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+if [ -z "${MEMO_PLUGIN_PWD:-}" ]; then
   SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$0")
-  CLAUDE_PLUGIN_ROOT=$(dirname "$(dirname "$SCRIPT_PATH")")
-  export CLAUDE_PLUGIN_ROOT
+  MEMO_PLUGIN_PWD=$(dirname "$(dirname "$SCRIPT_PATH")")
+  export MEMO_PLUGIN_PWD
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/bin/setup-vault.sh" "$VAULT"
-bash "${CLAUDE_PLUGIN_ROOT}/bin/copy-templates.sh" "$VAULT"
-bash "${CLAUDE_PLUGIN_ROOT}/bin/seed-demo.sh" "$VAULT"
+bash "${MEMO_PLUGIN_PWD}/bin/setup-vault.sh" "$VAULT"
+bash "${MEMO_PLUGIN_PWD}/bin/copy-templates.sh" "$VAULT"
+bash "${MEMO_PLUGIN_PWD}/bin/seed-demo.sh" "$VAULT"
 
 cat <<EOF
 

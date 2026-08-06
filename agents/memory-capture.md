@@ -26,8 +26,8 @@ Abort if output ≠ `VAULT_ROOT`.
 
 ## Process
 
-1. Derive slug: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/slug.sh" "<first-8-words>"`
-2. Enumerate existing notes (≤20 recent, exclude `index.md` and `status: deferred`) for MATCH per `Skill("capture-pipeline")`.
+1. Derive slug: `bash "${MEMO_PLUGIN_PWD}/scripts/slug.sh" "<first-8-words>"`
+2. Read `skills/capture-pipeline/SKILL.md` first for the capture pipeline, then enumerate existing notes (≤20 recent, exclude `index.md` and `status: deferred`) for MATCH.
 3. **MATCH:** append to the matched filename (carry exact path from enumeration): `obsidian append file=notes/<YYYY-MM-DD-matched-slug>.md content="---\n<chunk>"`. Bump `updated:` via `obsidian property:set name=updated value=<TODAY> path=notes/<matched-slug>.md`.
 4. **NEW:** create with frontmatter:
    ```bash

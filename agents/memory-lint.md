@@ -13,7 +13,7 @@ Scan vault and produce comprehensive lint report. Receives: vault path, scope (f
 
 ## Step 1 — Locate scan data
 
-The orchestrator runs `lint-scan.sh` before dispatching this agent. Read the scan data via direct FS read (documented bypass — see `Skill("vault-ops")`):
+The orchestrator runs `lint-scan.sh` before dispatching this agent. Read the scan data via direct FS read (documented bypass — see `skills/vault-ops/SKILL.md`):
 
 ```bash
 cat "${vault_path}/wiki/meta/lint-data-$(date +%Y-%m-%d).json"
@@ -22,7 +22,7 @@ cat "${vault_path}/wiki/meta/lint-data-$(date +%Y-%m-%d).json"
 If today's JSON is missing, run the scan as a fallback:
 
 ```bash
-CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/lint-scan.sh"
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD}" bash "${MEMO_PLUGIN_PWD}/scripts/lint-scan.sh"
 ```
 
 JSON is authoritative for dead_links, orphans, unresolved_targets, backlinks, anti_patterns, scope. Do NOT run `obsidian deadends`, `orphans`, or per-page `backlinks` — JSON is canonical.

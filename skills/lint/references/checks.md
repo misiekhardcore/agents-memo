@@ -25,7 +25,7 @@ Items in `wiki/index.md` pointing to renamed or deleted pages.
 ## Check #9: Hot.md Size Budget
 
 Count words in `wiki/hot.md` (spec: 500 words).
-- **WARN** if > 500 (spec limit per `Skill("hot-cache-protocol")`).
+- **WARN** if > 500 (spec limit per `${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md`).
 - **FAIL** if > 750 (50% buffer exceeded).
 - Remediation: move entries older than 2 weeks to `wiki/log.md`; trim `## Last Updated` to 3–5 items.
 

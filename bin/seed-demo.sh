@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Seed a vault with starter stub files and one example per page type.
-# Walks `${CLAUDE_PLUGIN_ROOT}/_seed/` and copies each file to the vault,
+# Walks `${MEMO_PLUGIN_PWD}/_seed/` and copies each file to the vault,
 # skipping any file that already exists (idempotent). The `{{today}}`
 # placeholder is substituted with the current date during copy.
 #
@@ -15,15 +15,15 @@ if [ -z "$VAULT" ]; then
   exit 0
 fi
 
-# Locate the plugin root. Prefer CLAUDE_PLUGIN_ROOT when set (in-session).
+# Locate the plugin root. Prefer MEMO_PLUGIN_PWD when set (in-session).
 # Otherwise derive it from $0 so standalone invocations work.
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+if [ -z "${MEMO_PLUGIN_PWD:-}" ]; then
   SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$0")
-  CLAUDE_PLUGIN_ROOT=$(dirname "$(dirname "$SCRIPT_PATH")")
-  export CLAUDE_PLUGIN_ROOT
+  MEMO_PLUGIN_PWD=$(dirname "$(dirname "$SCRIPT_PATH")")
+  export MEMO_PLUGIN_PWD
 fi
 
-SEED_DIR="${CLAUDE_PLUGIN_ROOT}/_seed"
+SEED_DIR="${MEMO_PLUGIN_PWD}/_seed"
 TODAY=$(date +%Y-%m-%d)
 
 if [ ! -d "$SEED_DIR" ]; then

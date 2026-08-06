@@ -390,6 +390,28 @@ else
   fail "expected multi-line rewrite to keep path/content args; got: $(printf '%s' "$rewritten" | head -c 200)"
 fi
 
+# 7. ${MEMO_PLUGIN_PWD} must be substituted with the resolved plugin root
+#    (pi-era variable; the Claude Code Bash tool does not have it set).
+#    Covers both already-routed and to-be-rewritten commands.
+out=$(run_hook 'bash "${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" read path=wiki/hot.md')
+updated=$(echo "$out" | jq -r '.hookSpecificOutput.updatedInput.command // empty')
+if [ -n "$updated" ] \
+   && echo "$updated" | grep -qF "$PLUGIN_ROOT/scripts/obsidian-cli.sh" \
+   && ! echo "$updated" | grep -q 'MEMO_PLUGIN_PWD'; then
+  pass "MEMO_PLUGIN_PWD → resolved plugin root"
+else
+  fail "expected MEMO_PLUGIN_PWD substituted; got: $(printf '%s' "$updated" | head -c 200)"
+fi
+
+# 8. Heredoc bodies must NOT be rewritten (line-1-scoped rewrite).
+heredoc_cmd=$'cat <<EOF\nobsidian read path=wiki/hot.md\nEOF'
+out=$(run_hook "$heredoc_cmd")
+if [ -z "$out" ]; then
+  pass "heredoc body — pass-through (line-1-only rewrite)"
+else
+  fail "expected pass-through for heredoc; got: $out"
+fi
+
 echo ""
 echo "=== rewrite-hook — daily/*.md antipattern guard (#98) ==="
 

@@ -17,7 +17,7 @@ Read strategically, answer precisely, file answers back so knowledge compounds. 
 ## Process
 1. **Quick**: Read `wiki/hot.md`. If it answers, respond. Read `wiki/index.md`. If found in index summary, respond. Otherwise → Standard.
 2. **Standard**: Read hot.md → tag-match leaves via `obsidian search` → hub path via `wiki/domains/` → fallback to index. Read candidates cheapest-first. Synthesize with citations.
-3. **Deep**: Read all relevant domain hubs → pull backlinks per candidate → group >5 and dispatch `agents/gather.md` per cluster (parallel). Synthesize comprehensive answer. Offer web search if coverage thin.
+3. **Deep**: Read all relevant domain hubs → pull backlinks per candidate → group >5 and dispatch `agents/memory-gather.md` per cluster (parallel). Synthesize comprehensive answer. Offer web search if coverage thin.
 4. **File**: Always file the answer. See `references/response-formatting.md` for filing format.
 
 ## Rules

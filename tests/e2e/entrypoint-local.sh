@@ -108,7 +108,7 @@ echo "entrypoint-local: vault at $VAULT_PATH"
 
 # ── Step 4: Scaffold vault dirs ───────────────────────────────────────────────
 echo "entrypoint-local: scaffolding vault"
-CLAUDE_PLUGIN_ROOT="$PLUGIN_SRC" bash "$PLUGIN_SRC/bin/setup-vault.sh" "$VAULT_PATH"
+MEMO_PLUGIN_PWD="$PLUGIN_SRC" bash "$PLUGIN_SRC/bin/setup-vault.sh" "$VAULT_PATH"
 
 # Seed wiki/hot.md so the readiness probe (obsidian read path=wiki/hot.md) can
 # succeed before /wiki init runs. hot.md links to index.md for the backlinks

@@ -61,4 +61,4 @@ Alongside `related:`, use typed fields when the semantic is unambiguous:
 
 All typed relationship fields are optional flat lists. Keep `related:` for general or untyped links. Add typed fields only when the semantic is genuinely unambiguous.
 
-For the YAML shape of these fields, see `${CLAUDE_PLUGIN_ROOT}/_shared/frontmatter.md` §Typed Relationship Fields.
+For the YAML shape of these fields, see `${MEMO_PLUGIN_PWD}/_shared/frontmatter.md` §Typed Relationship Fields.

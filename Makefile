@@ -1,13 +1,18 @@
 .PHONY: test e2e e2e-build e2e-clean e2e-preflight changelog
 
-# Deterministic test tier — wrapper smoke + AC1 regression for #98. Both
-# scripts skip with exit 0 when Obsidian is not running, so this target is
-# safe to run in any environment.
+# Deterministic test tier — hermetic regression suite (no Obsidian required):
+# extension smoke (node), pi-settings tier, prune-lint guard, hot-cache guard.
+# cli-smoke/daily-append/read-canvas skip with exit 0 when Obsidian is not
+# running, so the target is safe in any environment.
+# Requires node_modules (jiti + tsc): run `npm ci` first.
 test:
 	bash tests/cli-smoke.sh
 	bash tests/regression/daily-append.sh
 	bash tests/regression/read-canvas.sh
 	bash tests/regression/hot-cache-guard.sh
+	bash tests/regression/pi-settings-tier.sh
+	bash tests/regression/prune-lint-guard.sh
+	node tests/extension-smoke.mjs
 
 
 # AC12: preflight runs before docker build; fails fast (exit 2) if credentials

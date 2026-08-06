@@ -15,7 +15,7 @@ Capture raw thoughts verbatim in `notes/` without interrupting work. Wiki is pol
 - Output: Capture → `<vault>/notes/<slug>.md`. List → rendered bullets. Process → triaged notes.
 
 ## Process
-1. **CAPTURE**: Extract text → enumerate existing notes → MATCH/NEW per `_shared/capture-pipeline.md` §4 → write with frontmatter per §2 → patch index per §6. See `references/capture.md`.
+1. **CAPTURE**: Extract text → enumerate existing notes → MATCH/NEW per `${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md` §4 → write with frontmatter per §2 → patch index per §6. See `references/capture.md`.
 2. **LIST**: Read frontmatter from all `notes/*.md` via `obsidian properties`. Render pending/deferred bullets reverse-chronologically. Support `--project=<name>` filter. See `references/list.md`.
 3. **PROCESS**: Walk pending notes oldest-first. Per note: [s]ave (invoke save skill, delete), [d]efer (patch status to deferred), [x]delete, [q]uit. Summary on exit. See `references/process.md`.
 

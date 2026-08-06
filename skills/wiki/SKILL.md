@@ -15,7 +15,7 @@ Build and maintain persistent, compounding wiki in Obsidian vault. Wiki is produ
 
 ## Process
 1. **Route**: Map user request to sub-skill per the operations routing table in `references/architecture.md`.
-2. **INIT**: `bash "${CLAUDE_PLUGIN_ROOT}/bin/wiki-init.sh" "${user_config.vault_path}"` — idempotent vault bootstrap.
+2. **INIT**: `bash "${MEMO_PLUGIN_PWD}/bin/wiki-init.sh" "${user_config.vault_path}"` — idempotent vault bootstrap.
 3. **SCAFFOLD**: Per `references/scaffold.md` — 10-step procedure (folders, seed files, git init).
 4. **PROMOTE**: Per `references/promote.md` — tag resolution, leaf collection, hub creation, index registration.
 5. **Maintain**: Update hot cache and index/log after every operation.

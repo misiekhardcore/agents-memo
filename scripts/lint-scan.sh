@@ -9,26 +9,28 @@
 # Ordering guarantee: all enumeration arrays are sorted before writing JSON.
 #
 # Usage:
-#   CLAUDE_PLUGIN_ROOT=/path/to/plugin lint-scan.sh
+#   MEMO_PLUGIN_PWD=/path/to/plugin lint-scan.sh
 #
 # Env:
-#   CLAUDE_PLUGIN_ROOT — required; path to this plugin.
+#   MEMO_PLUGIN_PWD — optional; defaults to the plugin root derived from the
+#   script location (under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+#   the command; under Claude Code it is unset).
 #
 # Exit codes:
 #   0 — success
 #   1 — CLI error or dependency failure
-#   2 — CLAUDE_PLUGIN_ROOT unset
 
 set -euo pipefail
 
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  echo "lint-scan: CLAUDE_PLUGIN_ROOT is unset" >&2
-  exit 2
-fi
+# Locate the plugin root. Under pi the extension rewrites ${MEMO_PLUGIN_PWD} into
+# the command; under Claude Code it is unset, so fall back to script location.
+MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export MEMO_PLUGIN_PWD
+
 command -v jq >/dev/null 2>&1 || { echo "lint-scan: jq is required" >&2; exit 1; }
 
-CLI="${CLAUDE_PLUGIN_ROOT}/scripts/obsidian-cli.sh"
-VAULT="$("${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh")" || {
+CLI="${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh"
+VAULT="$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh")" || {
   echo "lint-scan: could not resolve vault" >&2; exit 1
 }
 TODAY=$(date +%F)

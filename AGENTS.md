@@ -39,7 +39,7 @@ _attachments/      Images and PDFs
 All vault reads and writes go through **Obsidian CLI**, not `Read`/`Write`/`Edit`. Enforcement is active, not advisory: two PreToolUse hooks gate every vault interaction.
 - `hooks/obsidian-cli-rewrite.sh` (matcher `Bash`) rewrites bare `obsidian <verb> ...` calls through `scripts/obsidian-cli.sh` (vault resolution, preflight, exit-code normalization).
 - `hooks/block-direct-vault-io.sh` (matcher `Read|Write|Edit`) **denies** direct file-tool calls on vault paths and returns the correct CLI verb in the deny reason, so the agent self-corrects on the next turn.
-- **Technical Patterns**: See `Skill("vault-ops")` for CLI patterns, slugging, indexing, active enforcement, and the canonical bypass list.
+- **Technical Patterns**: See `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` for CLI patterns, slugging, indexing, active enforcement, and the canonical bypass list.
 
 ```bash
 obsidian read path=wiki/hot.md
@@ -47,7 +47,7 @@ obsidian create path=wiki/concepts/foo.md content="..."
 obsidian append file=wiki/log.md content="..."
 obsidian prepend file=wiki/index.md content="..."
 ```
-`Read` allowed only outside the vault (skill refs, external paths) or on the documented bypass paths in `Skill("vault-ops")`. `Write`/`Edit` likewise restricted to the bypass paths; everything else is hook-denied.
+`Read` allowed only outside the vault (skill refs, external paths) or on the documented bypass paths in `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md`. `Write`/`Edit` likewise restricted to the bypass paths; everything else is hook-denied.
 
 ## Skills Discovery
 
@@ -85,13 +85,13 @@ All skills live in `skills/<name>/SKILL.md` and are auto-discovered by Claude Co
 
 Skills dispatch sub-agents to parallelize heavy lifting and avoid context bloat:
 
-- **`ingest`** → `agents/ingest.md` (one per source; writes wiki pages/index)
-- **`braindump`** → `agents/capture.md` (parallel when independent; sequential when order matters)
-- **`lint`** → `agents/lint.md` (runs all 16 checks; drafts report)
-- **`autoresearch`** → `agents/research-round.md` + `agents/source-synth.md` (search/fetch/synthesis)
-- **`query`** → `agents/gather.md` (parallel page reads when list > 5 pages)
+- **`ingest`** → `agents/memory-ingest.md` (one per source; writes wiki pages/index)
+- **`braindump`** → `agents/memory-capture.md` (parallel when independent; sequential when order matters)
+- **`lint`** → `agents/memory-lint.md` (runs all 16 checks; drafts report)
+- **`autoresearch`** → `agents/memory-research-round.md` + `agents/memory-source-synth.md` (search/fetch/synthesis)
+- **`query`** → `agents/memory-gather.md` (parallel page reads when list > 5 pages)
 
-Orchestrators verify CWD before spawning: `cd "${VAULT_ROOT}" && pwd`. Agents write wiki state; orchestrators coalesce results and update cross-cutting state (index, log). **Parallel agents never update `wiki/hot.md`** — only the orchestrator does (see `Skill("hot-cache-protocol")`).
+Orchestrators verify CWD before spawning: `cd "${VAULT_ROOT}" && pwd`. Agents write wiki state; orchestrators coalesce results and update cross-cutting state (index, log). **Parallel agents never update `wiki/hot.md`** — only the orchestrator does (see `${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md`).
 
 ## Ingest Rules
 
@@ -122,13 +122,13 @@ This directory (`agents/`) contains sub-agent definition files dispatched by orc
 
 |File|Dispatched by|Purpose|
 |-|-|-|
-|`capture.md`|`braindump` skill|Files one atomic chunk as an inbox note|
-|`gather.md`|`query` / `daily-close`|Reads files and returns structured summaries|
-|`ingest.md`|`ingest` skill|Processes one source into wiki pages|
-|`lint.md`|`lint` skill|Runs full wiki health check; produces report|
+|`memory-capture.md`|`braindump` skill|Files one atomic chunk as an inbox note|
+|`memory-gather.md`|`query` / `daily-close`|Reads files and returns structured summaries|
+|`memory-ingest.md`|`ingest` skill|Processes one source into wiki pages|
+|`memory-lint.md`|`lint` skill|Runs full wiki health check; produces report|
 |`memory-search.md`|orchestrators / `Task`|Answers questions from vault content (read-only)|
-|`research-round.md`|`autoresearch`|Searches, fetches, dispatches source-synth agents|
-|`source-synth.md`|`research-round`|Synthesizes one source into wiki pages|
+|`memory-research-round.md`|`autoresearch`|Searches, fetches, dispatches source-synth agents|
+|`memory-source-synth.md`|`research-round`|Synthesizes one source into wiki pages|
 
 ## Conventions
 

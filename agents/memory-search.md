@@ -14,7 +14,7 @@ Reads `QUESTION` from the input field. If missing, abort with "memory-search: no
 
 ## Vault I/O
 
-All vault reads use `scripts/obsidian-cli.sh`. Invoke `Skill("vault-ops")` for protocol.
+All vault reads use `scripts/obsidian-cli.sh`. Read `skills/vault-ops/SKILL.md` first for the vault I/O protocol, then follow it.
 
 ## CWD verification (required)
 
@@ -37,7 +37,7 @@ Sub-agent equivalent of the `memory-search` skill. Implements the same protocol 
    Collect candidate pages. Deduplicate across terms.
 
 3. **Route by candidate count:**
-   - **>5 candidates:** Group by logical cluster (tag, hub, or topic). Dispatch one `agents/gather.md` per cluster **in parallel** with:
+   - **>5 candidates:** Group by logical cluster (tag, hub, or topic). Dispatch one `agents/memory-gather.md` per cluster **in parallel** with:
      - `FILE_LIST` — vault-relative paths for that cluster
      - `VAULT_ROOT` — `$VAULT_ROOT`
      - `CONTEXT` — `memory-search cluster: <cluster-description>`
@@ -65,12 +65,12 @@ Gap: <what's missing, or "none">
 If the vault lacks the answer, the `Gap` field identifies what's missing. Do not fabricate.
 
 If the question needs deeper synthesis than a quick lookup provides, append:
-"This needs deeper treatment — run `Skill("query")` or /query."
+"This needs deeper treatment — run `skills/query/SKILL.md` or /query."
 
 ## References
 
-- `Skill("vault-ops")` — vault I/O protocol
+- `skills/vault-ops/SKILL.md` — vault I/O protocol
 - `scripts/obsidian-cli.sh` — CLI wrapper for all vault reads
-- `agents/gather.md` — bulk reading (>5 candidates)
+- `agents/memory-gather.md` — bulk reading (>5 candidates)
 - `skills/memory-search/SKILL.md` — user-facing equivalent of this agent
 - `skills/query/SKILL.md` — deeper synthesis with filing-back

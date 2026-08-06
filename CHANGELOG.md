@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+
+- Rename plugin-root variable from `${CLAUDE_PLUGIN_ROOT}` to `${MEMO_PLUGIN_PWD}` across scripts, hooks, and skill docs (pi migration). Claude Code's `hooks.json` keeps `${CLAUDE_PLUGIN_ROOT}`; hook scripts fall back to script-location resolution when the variable is unset.
+- Vault/config resolution now checks pi settings (`~/.pi/agent/settings.json`, then `.pi/settings.json`, `agentsMemo` block) before Claude Code settings and CWD `wiki/` discovery. A stale `agentsMemo.vaultPath` (missing or not a directory) falls through to the next tier instead of winning, mirroring the extension's existence check.
+
 ## [2.1.0] - 2026-06-16
 ### Changed
 

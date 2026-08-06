@@ -18,8 +18,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      - name: Setup Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6
+        with:
+          # pi peer dependency (@earendil-works/pi-coding-agent) requires
+          # node >= 22.19; the extension smoke imports it at runtime.
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        env:
+          HUSKY: 0
+        run: npm ci
+
+      - name: Typecheck extensions
+        run: npm run typecheck
+
       - name: Run read-canvas regression
         run: bash tests/regression/read-canvas.sh
 
       - name: Run daily-append regression
         run: bash tests/regression/daily-append.sh
+
+      - name: Run pi-settings-tier regression
+        run: bash tests/regression/pi-settings-tier.sh
+
+      - name: Run prune-lint-guard regression
+        run: bash tests/regression/prune-lint-guard.sh
+
+      - name: Run hot-cache-guard regression
+        run: bash tests/regression/hot-cache-guard.sh
+
+      - name: Run extension smoke
+        run: node tests/extension-smoke.mjs

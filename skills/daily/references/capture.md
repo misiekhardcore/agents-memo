@@ -6,11 +6,11 @@ Everything after the trigger phrase. Scan for image-path tokens (any token that 
 
 ## Step 2: Image routing
 
-If image paths present → invoke `Skill("image-capture")`. Use that skill to determine image-specific bullet text and attachment handling. Then continue with steps 3–8 for the normal daily append flow.
+If image paths present → Read `${MEMO_PLUGIN_PWD}/skills/image-capture/SKILL.md` first. Use that skill to determine image-specific bullet text and attachment handling. Then continue with steps 3–8 for the normal daily append flow.
 
 ## Step 3: Resolve vault
 
-Resolve `<vault_root>` per [§1](${CLAUDE_PLUGIN_ROOT}/_shared/capture-pipeline.md#1-vault-path-resolution). Abort with `No vault configured — run /wiki init first.` if unresolved.
+Resolve `<vault_root>` per [§1](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md). Abort with `No vault configured — run /wiki init first.` if unresolved.
 
 ## Step 4: Compute date/time
 
@@ -29,7 +29,7 @@ obsidian create-or-append \
   content="- HH:MM <verbatim text>"
 ```
 
-`template` used only when file is missing; when file exists, wrapper appends `content` and ignores `template`. Shape per [§2](${CLAUDE_PLUGIN_ROOT}/_shared/capture-pipeline.md#2-frontmatter-schema-note--daily).
+`template` used only when file is missing; when file exists, wrapper appends `content` and ignores `template`. Shape per [§2](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md).
 
 ## Step 7: Bump updated:
 
@@ -51,7 +51,7 @@ One line only. No diff, no reasoning.
 
 ## Idempotency and collision rules
 
-Per [§7](${CLAUDE_PLUGIN_ROOT}/_shared/capture-pipeline.md#7-daily-page-append-shape):
+Per [§7](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md):
 
 - Multiple calls in same minute land bullets with same `HH:MM` prefix in file order — no collision handling, no counter.
 - No MATCH/NEW decision runs — every call adds a new bullet.

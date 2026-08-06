@@ -7,7 +7,7 @@
 
 ## Hot Cache
 
-`wiki/hot.md`: ~500-word summary of recent context. Protocol in `_shared/hot-cache-protocol.md`.
+`wiki/hot.md`: ~500-word summary of recent context. Protocol in `skills/hot-cache-protocol/SKILL.md`.
 
 ## Cross-Project Referencing
 

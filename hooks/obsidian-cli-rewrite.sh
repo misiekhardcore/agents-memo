@@ -26,10 +26,53 @@ fi
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$CMD" ] && exit 0
+ORIGINAL_CMD="$CMD"
 
-# Already routed through the wrapper — nothing to do.
+# Resolve the plugin root from this script's own location and embed the
+# absolute path literally in the rewritten command.
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Substitute ${MEMO_PLUGIN_PWD} (braced and bare forms) with the resolved
+# plugin root — parity with the pi extension's tool_call rewrite. Skill and
+# agent docs reference the pi-era variable, but the Claude Code Bash tool runs
+# without it set; substituting here keeps skill-authored commands working
+# under both runtimes. Must run before the obsidian-cli early exit so
+# already-routed commands that use the variable still get substituted.
+#
+# The root is escaped for sed replacement use (\&, \\, \~ → literal), so
+# install paths containing those characters embed literally. The loop runs to
+# convergence because the bare-form boundary class restores the char it
+# consumed (e.g. adjacent `$MEMO_PLUGIN_PWD$MEMO_PLUGIN_PWD` needs two
+# passes; four bounds any sane command).
+PLUGIN_ROOT_SED=$(printf '%s' "$PLUGIN_ROOT" | sed 's/[&\\~]/\\&/g')
+for _ in 1 2 3 4; do
+  SUBSTITUTED=$(printf '%s' "$CMD" \
+    | sed -e "s~\${MEMO_PLUGIN_PWD}~${PLUGIN_ROOT_SED}~g" \
+          -e "s~\$MEMO_PLUGIN_PWD\([^A-Za-z0-9_]\)~${PLUGIN_ROOT_SED}\1~g" \
+          -e "s~\$MEMO_PLUGIN_PWD$~${PLUGIN_ROOT_SED}~")
+  [ "$SUBSTITUTED" = "$CMD" ] && break
+  CMD="$SUBSTITUTED"
+done
+
+# Already routed through the wrapper — emit only if the MEMO substitution
+# changed the command; otherwise pass through unchanged.
 case "$CMD" in
-  *obsidian-cli*) exit 0 ;;
+  *obsidian-cli*)
+    if [ "$CMD" != "$ORIGINAL_CMD" ]; then
+      ORIGINAL_INPUT=$(echo "$INPUT" | jq -c '.tool_input')
+      UPDATED_INPUT=$(echo "$ORIGINAL_INPUT" | jq --arg cmd "$CMD" '.command = $cmd')
+      jq -n \
+        --argjson updated "$UPDATED_INPUT" \
+        '{
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": "MEMO_PLUGIN_PWD substitution (agents-memo)",
+            "updatedInput": $updated
+          }
+        }'
+    fi
+    exit 0 ;;
 esac
 
 # Antipattern guard (issue #98): block `obsidian create … overwrite=true` calls
@@ -67,22 +110,16 @@ fi
 # multi-line commands (backslash continuations, here-docs, embedded newlines)
 # verbatim after the first token. Mid-string occurrences of `obsidian` (e.g.
 # inside content=, comments) are not touched.
-#
-# Resolve the plugin root from this script's own location and embed the
-# absolute path literally in the rewritten command. $CLAUDE_PLUGIN_ROOT is
-# not available in the Bash tool's subprocess environment where the rewritten
-# command executes, so it cannot be left for "Bash to expand at runtime".
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REWRITTEN=$(printf '%s' "$CMD" | sed -E "1 s~^([[:space:]]*)obsidian([[:space:]]|\$)~\1\"${PLUGIN_ROOT}/scripts/obsidian-cli.sh\"\2~")
+REWRITTEN=$(printf '%s' "$CMD" | sed -E "1 s~^([[:space:]]*)obsidian([[:space:]]|\$)~\1\"${PLUGIN_ROOT_SED}/scripts/obsidian-cli.sh\"\2~")
 
-# No-op if the leading token wasn't `obsidian` (e.g. `which obsidian`,
-# `cat $obsidian_path`, `pgrep -f obsidian`).
-[ "$REWRITTEN" = "$CMD" ] && exit 0
+# No-op only if neither the leading-token rewrite nor the MEMO substitution
+# changed the command (e.g. `which obsidian`, `cat $obsidian_path`, or a
+# plain command with no MEMO_PLUGIN_PWD reference).
+if [ "$REWRITTEN" = "$CMD" ] && [ "$CMD" = "$ORIGINAL_CMD" ]; then exit 0; fi
 
 # Emit the rewritten tool_input. Preserve all other fields (e.g. `description`).
 ORIGINAL_INPUT=$(echo "$INPUT" | jq -c '.tool_input')
 UPDATED_INPUT=$(echo "$ORIGINAL_INPUT" | jq --arg cmd "$REWRITTEN" '.command = $cmd')
-
 jq -n \
   --argjson updated "$UPDATED_INPUT" \
   '{

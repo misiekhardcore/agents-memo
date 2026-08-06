@@ -15,8 +15,8 @@ Iterative web searches on a topic, synthesize findings, file everything into wik
 
 ## Process
 1. **Init**: Read `_shared/research-program.md` for constraints. Read hot.md + index.md for existing coverage.
-2. **Round 1**: Broad web search → fetch sources → fan-out `agents/source-synth.md` per source (parallel).
-3. **Round 2**: Identify gaps → fan-out `agents/research-round.md` per gap (parallel).
+2. **Round 1**: Broad web search → fetch sources → fan-out `agents/memory-source-synth.md` per source (parallel).
+3. **Round 2**: Identify gaps → fan-out `agents/memory-research-round.md` per gap (parallel).
 4. **Synthesize**: Write synthesis page + trail page. See `references/research-and-filing.md` for schemas.
 5. **File**: Update `wiki/index.md`, append to `wiki/log.md`, overwrite `wiki/hot.md`.
 

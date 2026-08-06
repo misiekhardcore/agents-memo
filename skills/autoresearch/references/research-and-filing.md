@@ -10,20 +10,20 @@ Round 1. Broad search — INLINE (main thread)
 2. For each angle: run 2-3 WebSearch queries
 3. For top 2-3 results per angle: WebFetch the page
 4. Extract from each: key claims, entities, concepts, open questions
-5. Dispatch one agents/source-synth.md per fetched source IN PARALLEL.
+5. Dispatch one agents/memory-source-synth.md per fetched source IN PARALLEL.
    Pass seed-brief: SOURCE_CONTENT, SOURCE_URL, RAW_PATH, VAULT_ROOT, TODAY, RESEARCH_TOPIC.
    Wait for all source-synth agents to finish. Collect their reports.
 
 Round 2. Gap fill — PARALLEL AGENT FAN-OUT
 5. Identify what's missing or contradicted from Round 1
-6. For each gap, dispatch one agents/research-round.md IN PARALLEL.
+6. For each gap, dispatch one agents/memory-research-round.md IN PARALLEL.
    Pass seed-brief: GAP, RESEARCH_TOPIC, EXISTING_SOURCES (URLs fetched in Round 1),
          MAX_QUERIES=5, MAX_FETCHES=3, VAULT_ROOT, TODAY.
    Wait for all research-round agents to finish. Collect their reports.
 
 Round 3. Synthesis check — SINGLE AGENT DISPATCH (optional, if gaps remain)
 7. If major contradictions or missing pieces still exist: dispatch one
-   agents/research-round.md for the remaining gap.
+   agents/memory-research-round.md for the remaining gap.
 8. Otherwise: proceed to filing
 
 Max rounds: 3 (as set in program.md). Stop when depth is reached or max rounds hit.
