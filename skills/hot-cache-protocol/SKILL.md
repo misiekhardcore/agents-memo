@@ -85,6 +85,10 @@ YYYY-MM-DD. [what happened in one phrase]
 
 **Rules:** <500 words. Factual only. Overwrite completely (never append). Wikilinks must match real filenames.
 
+## 0-Byte Guard (automatic)
+
+`hooks/guard-hot-cache.sh` (PostToolUse, Bash matcher) detects when a command touching `wiki/hot.md` leaves the file empty (0 bytes) — a known failure mode where a failed/truncated `content=` write is masked by the CLI wrapper's exit-code normalization. On detection it restores the last good version from git (or removes the empty file when git has none) and injects a warning into the conversation. If you see that warning, the previous hot.md content was restored — **retry the update with non-empty content**; never leave hot.md empty, the auto-commit hook will otherwise freeze the corruption into git history.
+
 ## Parallel Worker Discipline
 
 Parallel workers (Task-tool or TeamCreate) must NOT update `wiki/hot.md`. Orchestrator only, once after all report. Prevents races and conflicts.
