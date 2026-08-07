@@ -304,33 +304,31 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
       `Available agents:\n${agentDescriptions}\n` +
       "Modes: single {agent, task}; parallel {tasks: [{agent, task}]}; chain {chain: [{agent, task}]} where {previous} in a later task is replaced with the prior step's output.",
     promptSnippet: "memo_dispatch: delegate vault work to specialized agents",
-    parameters: Type.Union([
-      Type.Object({
-        agent: Type.String({ description: "Agent name to run (single mode)" }),
-        task: Type.String({ description: "Task to delegate" }),
-        cwd: Type.Optional(Type.String({ description: "Working directory (defaults to session cwd)" })),
-      }),
-      Type.Object({
-        tasks: Type.Array(
-          Type.Object({
-            agent: Type.String({ description: "Agent name" }),
-            task: Type.String({ description: "Task for this agent" }),
-          }),
-          { description: "Tasks to run in parallel" },
-        ),
-        cwd: Type.Optional(Type.String({ description: "Working directory (defaults to session cwd)" })),
-      }),
-      Type.Object({
-        chain: Type.Array(
-          Type.Object({
-            agent: Type.String({ description: "Agent name" }),
-            task: Type.String({ description: "Task; {previous} is replaced with the prior step's output" }),
-          }),
-          { description: "Sequential steps; each step's output feeds the next via {previous}" },
-        ),
-        cwd: Type.Optional(Type.String({ description: "Working directory (defaults to session cwd)" })),
-      }),
-    ]),
+    // Flat object schema (not Type.Union): OpenAI-compatible providers (e.g.
+    // DeepSeek) reject tool schemas without a top-level `type: "object"` —
+    // Type.Union emits `{anyOf:[...]}` with type: null → HTTP 400 on every
+    // request once the tool is registered. Mode is inferred in execute() from
+    // which fields are present; `mode` is an optional hint for the model.
+    parameters: Type.Object({
+      mode: Type.Optional(Type.Union([Type.Literal("single"), Type.Literal("parallel"), Type.Literal("chain")], { description: "Execution mode (informational; inferred from the fields provided)" })),
+      agent: Type.Optional(Type.String({ description: "Agent name to run (single mode)" })),
+      task: Type.Optional(Type.String({ description: "Task to delegate (single mode)" })),
+      tasks: Type.Optional(Type.Array(
+        Type.Object({
+          agent: Type.String({ description: "Agent name" }),
+          task: Type.String({ description: "Task for this agent" }),
+        }),
+        { description: "Tasks to run in parallel" },
+      )),
+      chain: Type.Optional(Type.Array(
+        Type.Object({
+          agent: Type.String({ description: "Agent name" }),
+          task: Type.String({ description: "Task; {previous} is replaced with the prior step's output" }),
+        }),
+        { description: "Sequential steps; each step's output feeds the next via {previous}" },
+      )),
+      cwd: Type.Optional(Type.String({ description: "Working directory (defaults to session cwd)" })),
+    }),
     async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<unknown>> {
       const cwd = "cwd" in params && typeof params.cwd === "string" ? params.cwd : ctx.cwd;
 
@@ -360,7 +358,7 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
       };
 
       // single
-      if ("agent" in params) {
+      if (typeof params.agent === "string" && typeof params.task === "string") {
         const r = await runOne(params.agent, params.task);
         return {
           content: [{ type: "text", text: formatResults([r]) }],
@@ -369,7 +367,7 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
       }
 
       // parallel
-      if ("tasks" in params) {
+      if (Array.isArray(params.tasks)) {
         const results = await Promise.all(
           params.tasks.map((t, i) => runOne(t.agent, t.task, i + 1)),
         );
@@ -383,6 +381,14 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
       // The replacer MUST be the arrow-function form: a string replacement
       // would interpret $-patterns ($&, $', $`, $1-$99) in subagent output
       // as special substitution tokens and mangle the next task.
+      if (!("chain" in params) || !Array.isArray(params.chain)) {
+        // Flat optional schema can validate an empty call - fail clearly
+        // instead of crashing on undefined .length below.
+        return {
+          content: [{ type: "text", text: "memo_dispatch: no recognized mode - provide agent+task, tasks[], or chain[]" }],
+          details: { mode: "invalid", results: [] },
+        };
+      }
       const results: SingleResult[] = [];
       let previous = "";
       for (let i = 0; i < params.chain.length; i++) {

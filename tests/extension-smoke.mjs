@@ -665,8 +665,20 @@ section("AC20/21 — memo_dispatch registration + modes");
   const tool = mock2.tools[0];
   assert(tool.name === "memo_dispatch", "registered as memo_dispatch");
   assert(typeof tool.execute === "function", "execute handler present");
-  const shapes = tool.parameters.anyOf ?? tool.parameters.schemas ?? [];
-  assert(shapes.length === 3, "single/parallel/chain parameter shapes");
+  // Provider-safe flat object schema: top-level type must be "object" (a
+  // Type.Union emits {anyOf:[...]} with type:null, which OpenAI-compatible
+  // providers like DeepSeek reject with HTTP 400).
+  assert(tool.parameters.type === "object", "memo_dispatch schema has top-level type: object");
+  const props = tool.parameters.properties ?? {};
+  for (const k of ["mode", "agent", "task", "tasks", "chain", "cwd"]) {
+    assert(k in props, `memo_dispatch schema declares ${k}`);
+  }
+
+  // empty call (valid against the flat optional schema) → clear error, no crash
+  calls.spawn.length = 0;
+  const resEmpty = await tool.execute("x", {}, undefined, undefined, { cwd: REPO });
+  assert(resEmpty.details.mode === "invalid", "empty call → invalid mode result");
+  assert(calls.spawn.length === 0, "empty call → no spawn");
 
   // unknown agent → fails fast, no subprocess spawn
   calls.spawn.length = 0;
