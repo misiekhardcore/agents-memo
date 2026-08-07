@@ -5,15 +5,15 @@ Scope: add project-scoped memory to agents-memo vault with pi-self-learning-like
 
 ## 1. Current state (what exists in PR #185)
 
-| Feature | Status | Detail |
-|---|---|---|
-| agent_end handler | ✅ implemented | Writes static marker to global `daily/YYYY-MM-DD.md` |
-| session_shutdown handler | ✅ implemented | Same static marker |
-| before_agent_start injection | ✅ implemented | INIT.md, hot.md (if always), index.md (if always) |
-| Per-project storage | ❌ missing | Everything goes to global vault |
-| LLM-distilled reflection | ❌ missing | Static marker only — no `complete()` call |
-| Core learnings (CORE.md) | ❌ missing | No ranked/deduped durable learnings |
-| Monthly summaries | ❌ missing | No synthesis across daily entries |
+|Feature|Status|Detail|
+|-|-|-|
+|agent_end handler|✅ implemented|Writes static marker to global `daily/YYYY-MM-DD.md`|
+|session_shutdown handler|✅ implemented|Same static marker|
+|before_agent_start injection|✅ implemented|INIT.md, hot.md (if always), index.md (if always)|
+|Per-project storage|❌ missing|Everything goes to global vault|
+|LLM-distilled reflection|❌ missing|Static marker only — no `complete()` call|
+|Core learnings (CORE.md)|❌ missing|No ranked/deduped durable learnings|
+|Monthly summaries|❌ missing|No synthesis across daily entries|
 
 ## 2. Target vault structure
 
@@ -221,7 +221,7 @@ updated: <date>
 1. Extend `AgentsMemoConfig` interface + `readPiSettings()` in `extensions/agents-memo.ts`
 2. Add `getProjectSlug()` function
 3. Replace static `appendDailyReflection` with `spawnReflectionSubprocess` + `appendProjectDailyEntry`
-4. Add `updateProjectCore()` (create/merge/dedup/cap)  
+4. Add `updateProjectCore()` (create/merge/dedup/cap)
 5. Add `before_agent_start` handler for project core.md injection
 6. Add `session_compact` re-injection for project core.md
 7. Add monthly synthesis in `session_shutdown` (optional, phase 2)
