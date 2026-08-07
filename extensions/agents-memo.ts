@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
+  AgentEndEvent,
   AgentSettledEvent,
   BeforeAgentStartEventResult,
   ExtensionAPI,
@@ -39,19 +40,45 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
+interface ProjectMemoryConfig {
+  enabled: boolean;
+  maxLearningsPerReflection: number;
+  maxCoreItems: number;
+}
+
+interface ReflectModelConfig {
+  provider: string;
+  id: string;
+}
+
 interface AgentsMemoConfig {
   vaultPath?: string;
   bootstrapReadHot?: "always" | "on-demand" | "never";
   bootstrapReadIndex?: "always" | "on-demand" | "never";
   autoCommit?: boolean;
+  projectMemory?: ProjectMemoryConfig;
+  reflectModel?: ReflectModelConfig;
 }
 
+const PROJECT_MEMORY_DEFAULTS: ProjectMemoryConfig = {
+  enabled: true,
+  maxLearningsPerReflection: 5,
+  maxCoreItems: 20,
+};
+
+const REFLECT_MODEL_DEFAULTS: ReflectModelConfig = {
+  provider: "deepseek",
+  id: "deepseek-v4-flash",
+};
+
+// Per-key first-wins, matching resolve-vault.sh / resolve-config.sh tier
+// 0a/0b: for each key the global file (~/.pi/agent/settings.json) wins; the
+// project file (.pi/settings.json) only fills keys the global file leaves
+// undefined. A global block that defines only autoCommit must not shadow a
+// project vaultPath. projectMemory / reflectModel are merged the same way at
+// their own sub-key level, then defaults are applied with nullish coalescing
+// so explicit user values are never overwritten.
 function readPiSettings(): AgentsMemoConfig {
-  // Per-key first-wins, matching resolve-vault.sh / resolve-config.sh tier
-  // 0a/0b: for each key the global file (~/.pi/agent/settings.json) wins; the
-  // project file (.pi/settings.json) only fills keys the global file leaves
-  // undefined. A global block that defines only autoCommit must not shadow a
-  // project vaultPath.
   const files = [
     join(homedir(), ".pi", "agent", "settings.json"),
     join(process.cwd(), ".pi", "settings.json"),
@@ -70,15 +97,102 @@ function readPiSettings(): AgentsMemoConfig {
         merged.bootstrapReadIndex = block.bootstrapReadIndex;
       }
       if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined) merged.autoCommit = block.autoCommit;
+      // projectMemory sub-keys (per-key first-wins at the nested level too).
+      if (typeof block.projectMemory?.enabled === "boolean" && merged.projectMemory?.enabled === undefined) {
+        (merged.projectMemory ??= {} as ProjectMemoryConfig).enabled = block.projectMemory.enabled;
+      }
+      if (typeof block.projectMemory?.maxLearningsPerReflection === "number" && merged.projectMemory?.maxLearningsPerReflection === undefined) {
+        (merged.projectMemory ??= {} as ProjectMemoryConfig).maxLearningsPerReflection = block.projectMemory.maxLearningsPerReflection;
+      }
+      if (typeof block.projectMemory?.maxCoreItems === "number" && merged.projectMemory?.maxCoreItems === undefined) {
+        (merged.projectMemory ??= {} as ProjectMemoryConfig).maxCoreItems = block.projectMemory.maxCoreItems;
+      }
+      // reflectModel sub-keys.
+      if (typeof block.reflectModel?.provider === "string" && merged.reflectModel?.provider === undefined) {
+        (merged.reflectModel ??= {} as ReflectModelConfig).provider = block.reflectModel.provider;
+      }
+      if (typeof block.reflectModel?.id === "string" && merged.reflectModel?.id === undefined) {
+        (merged.reflectModel ??= {} as ReflectModelConfig).id = block.reflectModel.id;
+      }
     } catch {
       // missing or unparseable - skip
     }
   }
+  // Defaults for keys the merge left undefined - never overwrite user values.
+  merged.projectMemory = {
+    enabled: merged.projectMemory?.enabled ?? PROJECT_MEMORY_DEFAULTS.enabled,
+    maxLearningsPerReflection: merged.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection,
+    maxCoreItems: merged.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems,
+  };
+  merged.reflectModel = {
+    provider: merged.reflectModel?.provider ?? REFLECT_MODEL_DEFAULTS.provider,
+    id: merged.reflectModel?.id ?? REFLECT_MODEL_DEFAULTS.id,
+  };
   return merged;
 }
 
 function expandTilde(p: string): string {
   return p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
+}
+
+// ─── Project slug ─────────────────────────────────────────────────────────────
+// Slug derived from the git origin repo name, falling back to the sanitized
+// basename of the working directory. Lowercase; every non-alphanumeric run
+// (spaces, underscores, dots, ...) collapses to a single hyphen; edge hyphens
+// trimmed; never empty ("unknown").
+function sanitizeSlug(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+}
+
+// Exported for the smoke test.
+export function getProjectSlug(cwd: string): string {
+  try {
+    const url = execSync("git remote get-url origin", {
+      cwd,
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    // "git@github.com:owner/repo.git" or "https://github.com/owner/repo" → owner/repo
+    const match = url.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
+    if (match) return sanitizeSlug(match[1].split("/")[1]);
+  } catch {
+    // no git remote - fall through to directory name
+  }
+  return sanitizeSlug(basename(cwd));
+}
+
+function projectCoreRel(slug: string): string {
+  return `wiki/projects/${slug}/core.md`;
+}
+
+function projectDailyRel(slug: string, dateStr: string): string {
+  return `wiki/projects/${slug}/daily/${dateStr}.md`;
+}
+
+function ensureProjectDir(vaultPath: string, slug: string): void {
+  try {
+    // Same pattern as skills/daily (Step 5: mkdir -p); the obsidian CLI cannot
+    // create intermediate folders for nested paths.
+    execSync(`mkdir -p "${join(vaultPath, "wiki", "projects", slug, "daily")}"`, {
+      cwd: vaultPath,
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+  } catch {
+    // best-effort - never fail the agent loop
+  }
+}
+
+// Escape a string for a double-quoted shell argument whose value round-trips
+// through the obsidian CLI content= handling: literal \n sequences become
+// newlines in the vault file. Real newlines are converted to \n so multi-line
+// content survives as a single shell argument.
+function escapeShellContent(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, "\\n");
 }
 
 // Parity with resolve-vault.sh tiers 3/4: Claude Code settings fall back after
@@ -306,7 +420,304 @@ function isDailyOverwrite(command: string): boolean {
   return hasDailyPath && hasOverwrite;
 }
 
-// ─── Reflection helper ────────────────────────────────────────────────────────
+// ─── Reflection engine ────────────────────────────────────────────────────────
+// Per-project memory (docs/per-project-memory.md): on agent_end, distill the
+// last messages into a mistake/fix reflection via a cheap pi subprocess and
+// file it under wiki/projects/<slug>/ (daily + core.md). pi@0.83 exports no
+// complete()/getModel() API, so the reflection runs as a spawned pi process
+// (same invocation pattern memo_dispatch uses), testable via mock spawnSync.
+
+interface Reflection {
+  mistakes: string[];
+  fixes: string[];
+}
+
+// Minimal structural view of the messages pi passes to agent_end. Avoids a
+// direct import from the nested @earendil-works/pi-ai transitive dep; only the
+// fields the serializer reads are declared.
+interface ReflectionMessage {
+  role: string;
+  content: unknown;
+  toolName?: string;
+}
+
+// Cached pi binary for the reflection subprocess (learning: never assume the
+// pi binary is on PATH for spawned processes).
+const PI_BIN = (() => {
+  try {
+    const out = spawnSync("which", ["pi"], { encoding: "utf-8", timeout: 5000 }).stdout.trim();
+    if (out) return out;
+  } catch {
+    // fall back to PATH lookup
+  }
+  return "pi";
+})();
+
+// Compact text transcript of the last messages, bounded per part and overall
+// (keep the tail - the reflection focuses on what just happened).
+function serializeMessages(messages: ReflectionMessage[]): string {
+  const MAX_PART = 500;
+  const MAX_TOTAL = 8000;
+  const lines: string[] = [];
+  for (const msg of messages) {
+    let text = "";
+    if (typeof msg.content === "string") {
+      text = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      text = (msg.content as Array<{ type?: string; text?: string; name?: string; arguments?: unknown }>)
+        .map((part) => {
+          if (part?.type === "text") return part.text ?? "";
+          if (part?.type === "toolCall") return `[tool_call ${part.name}] ${JSON.stringify(part.arguments)}`;
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+    text = text.trim();
+    if (!text) continue;
+    const truncated = text.length > MAX_PART ? text.slice(0, MAX_PART) + "…" : text;
+    if (msg.role === "toolResult") lines.push(`[tool ${msg.toolName ?? "?"}] ${truncated}`);
+    else lines.push(`${msg.role === "assistant" ? "Assistant" : "User"}: ${truncated}`);
+  }
+  const joined = lines.join("\n");
+  return joined.length > MAX_TOTAL ? joined.slice(-MAX_TOTAL) : joined;
+}
+
+function buildReflectionSystemPrompt(maxItems: number): string {
+  return [
+    "You are a coding session mistake-prevention reflection engine.",
+    "Focus on what went wrong and how it was fixed.",
+    'Return STRICT JSON only: {"mistakes":["..."],"fixes":["..."]}',
+    `- Keep each array short (max ${maxItems}).`,
+    "- Prefer specific, actionable, prevention-oriented points.",
+    "- Rewrite project-specific details into generic rules.",
+  ].join("\n");
+}
+
+function finalAssistantText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return (content as Array<{ type?: string; text?: string }>)
+    .filter((part) => part?.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n");
+}
+
+function parseReflectionJson(text: string): Reflection | null {
+  const parse = (candidate: string): Reflection | null => {
+    try {
+      const parsed = JSON.parse(candidate) as { mistakes?: unknown; fixes?: unknown };
+      const mistakes = Array.isArray(parsed.mistakes) ? parsed.mistakes.filter((m): m is string => typeof m === "string") : [];
+      const fixes = Array.isArray(parsed.fixes) ? parsed.fixes.filter((m): m is string => typeof m === "string") : [];
+      if (mistakes.length === 0 && fixes.length === 0) return null;
+      return { mistakes, fixes };
+    } catch {
+      return null;
+    }
+  };
+  const trimmed = text.trim();
+  // Strip markdown fences if the model wrapped the JSON.
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const parsed = parse(fenced[1].trim());
+    if (parsed) return parsed;
+  }
+  // Bare {...} block in otherwise-prose output.
+  const bare = trimmed.match(/\{[\s\S]*\}/);
+  return bare ? parse(bare[0]) : parse(trimmed);
+}
+
+function parseReflectionOutput(stdout: string): Reflection | null {
+  let lastText = "";
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    let event: { type?: string; message?: { content?: unknown } };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === "message_end" && event.message) {
+      const text = finalAssistantText(event.message.content).trim();
+      if (text) lastText = text;
+    }
+  }
+  return lastText ? parseReflectionJson(lastText) : null;
+}
+
+// Spawn pi --mode json -p --no-session with the reflection instructions as the
+// system prompt and the conversation as the user message. Synchronous
+// (spawnSync, per the design: deterministic and testable with a mocked
+// spawnSync); a timeout bounds the worst case so a hung model never blocks the
+// agent loop forever. Best-effort: any failure yields null and the caller
+// silently skips.
+function spawnReflectionSubprocess(config: AgentsMemoConfig, messages: ReflectionMessage[]): Reflection | null {
+  const model = config.reflectModel ?? REFLECT_MODEL_DEFAULTS;
+  const maxItems = config.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection;
+  const conversation = serializeMessages(messages);
+  const args: string[] = ["--mode", "json", "-p", "--no-session"];
+  if (model.provider) args.push("--provider", model.provider);
+  args.push("--model", model.id);
+  args.push("--system-prompt", buildReflectionSystemPrompt(maxItems));
+  args.push(`<conversation>\n${conversation}\n</conversation>`);
+  try {
+    const result = spawnSync(PI_BIN, args, {
+      encoding: "utf-8",
+      timeout: 60000,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+    if (result.status !== 0 || !result.stdout) return null;
+    return parseReflectionOutput(result.stdout);
+  } catch {
+    return null;
+  }
+}
+
+function appendProjectDailyEntry(
+  vaultPath: string,
+  slug: string,
+  dateStr: string,
+  timeStr: string,
+  reflection: Reflection,
+): void {
+  try {
+    ensureProjectDir(vaultPath, slug);
+    const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
+    const template =
+      "---\\ntype: project-daily\\nproject: " + slug +
+      "\\ndate: " + dateStr + "\\ncreated: " + dateStr + "\\nupdated: " + dateStr +
+      "\\n---\\n\\n## Reflections\\n";
+    const mistakes = reflection.mistakes.map((m) => `- ${m}`).join("\\n") || "- (none)";
+    const fixes = reflection.fixes.map((f) => `- ${f}`).join("\\n") || "- (none)";
+    const content =
+      `## ${timeStr} Reflection\\n` +
+      `### Mistakes\\n${mistakes}\\n` +
+      `### Fixes\\n${fixes}\\n`;
+    execSync(
+      `bash "${obsCli}" create-or-append ` +
+        `file=${projectDailyRel(slug, dateStr)} ` +
+        `template="${escapeShellContent(template)}" ` +
+        `content="${escapeShellContent(content)}"`,
+      { cwd: vaultPath, encoding: "utf-8", timeout: 10000 },
+    );
+  } catch {
+    // best-effort - never fail the agent loop
+  }
+}
+
+// ─── core.md management (pure, unit-testable) ────────────────────────────────
+interface CoreEntry {
+  text: string;
+  score: number;
+}
+
+interface ProjectCore {
+  learnings: CoreEntry[];
+  watchouts: CoreEntry[];
+}
+
+const SCORE_MARKER_RE = /<!--score:(\d+)-->\s*$/;
+
+function normalizeKey(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Parse a core.md document into entries. Bullets carry an invisible HTML
+// score marker (<!--score:N-->); watch-out bullets are rendered with an
+// "Avoid: " prefix which is stripped here so the same mistake text dedups
+// across reflections.
+export function parseCoreFile(text: string): ProjectCore {
+  const learnings: CoreEntry[] = [];
+  const watchouts: CoreEntry[] = [];
+  let section: "learnings" | "watchouts" | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("## High-value learnings")) {
+      section = "learnings";
+      continue;
+    }
+    if (line.startsWith("## Watch-outs")) {
+      section = "watchouts";
+      continue;
+    }
+    if (section && line.startsWith("- ")) {
+      let body = line.slice(2).trimEnd();
+      let score = 1;
+      const scoreM = body.match(SCORE_MARKER_RE);
+      if (scoreM) {
+        score = parseInt(scoreM[1], 10) || 1;
+        body = body.slice(0, scoreM.index).trimEnd();
+      }
+      if (section === "watchouts" && body.startsWith("Avoid: ")) body = body.slice("Avoid: ".length).trim();
+      if (!body || body === "(none yet)") continue;
+      (section === "learnings" ? learnings : watchouts).push({ text: body, score });
+    }
+  }
+  return { learnings, watchouts };
+}
+
+// Merge a reflection into existing entries: fixes → learnings, mistakes →
+// watch-outs (rendered with an "Avoid: " prefix). Existing entries get score+1
+// on a normalized-text hit; new entries start at 1. Sorted by score desc,
+// capped at maxItems. No age-based decay (non-goal: simple cap + recency).
+export function mergeReflection(core: ProjectCore, reflection: Reflection, maxItems: number): ProjectCore {
+  const mergeInto = (entries: CoreEntry[], incoming: string[]): CoreEntry[] => {
+    const byKey = new Map(entries.map((e) => [normalizeKey(e.text), e]));
+    for (const raw of incoming) {
+      const text = raw.trim();
+      if (!text) continue;
+      const key = normalizeKey(text);
+      const existing = byKey.get(key);
+      if (existing) existing.score += 1;
+      else byKey.set(key, { text, score: 1 });
+    }
+    return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, maxItems);
+  };
+  return {
+    learnings: mergeInto(core.learnings, reflection.fixes),
+    watchouts: mergeInto(core.watchouts, reflection.mistakes),
+  };
+}
+
+export function renderCoreFile(slug: string, dateStr: string, core: ProjectCore): string {
+  const renderSection = (title: string, entries: CoreEntry[], isWatchout: boolean): string => {
+    if (entries.length === 0) return `## ${title}\n- (none yet)\n`;
+    const bullets = entries.map((e) => `- ${isWatchout ? "Avoid: " : ""}${e.text}<!--score:${e.score}-->`);
+    return `## ${title}\n${bullets.join("\n")}\n`;
+  };
+  return (
+    `---\ntype: project-core\nproject: ${slug}\ncreated: ${dateStr}\nupdated: ${dateStr}\n---\n\n` +
+    `# Project Learnings — ${slug}\n\n` +
+    renderSection("High-value learnings", core.learnings, false) +
+    "\n" +
+    renderSection("Watch-outs", core.watchouts, true)
+  );
+}
+
+function updateProjectCore(
+  vaultPath: string,
+  slug: string,
+  dateStr: string,
+  reflection: Reflection,
+  maxCoreItems: number,
+): void {
+  try {
+    ensureProjectDir(vaultPath, slug);
+    const relPath = projectCoreRel(slug);
+    const existing = execObsidianRead(vaultPath, relPath);
+    const core = existing ? parseCoreFile(existing) : { learnings: [], watchouts: [] };
+    const merged = mergeReflection(core, reflection, maxCoreItems);
+    const rendered = renderCoreFile(slug, dateStr, merged);
+    const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
+    execSync(
+      `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
+      { cwd: vaultPath, encoding: "utf-8", timeout: 10000 },
+    );
+  } catch {
+    // best-effort - never fail the agent loop
+  }
+}
+
 function appendDailyReflection(vaultPath: string, label: string): void {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
@@ -423,6 +834,10 @@ export default function (pi: ExtensionAPI) {
   // matching the Claude Code SessionStart + PostCompact model. session_compact
   // re-injection below is unaffected by the latch.
   let bootstrapServed = false;
+  // Project slug cached at before_agent_start so session_compact re-injects the
+  // same project's core.md even if process.cwd() changed mid-session (memory:
+  // never guess the slug in session_compact).
+  let lastProjectSlug: string | undefined;
   const isSessionBootstrap = () => {
     if (bootstrapServed) return false;
     // All handlers of one emit complete within the current task; flip the
@@ -479,7 +894,28 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
+  // ── AC-PM: inject wiki/projects/<slug>/core.md when projectMemory is on ────
+  pi.on("before_agent_start", (_event, ctx): BeforeAgentStartEventResult | void => {
+    if (!isSessionBootstrap()) return;
+    const config = readPiSettings();
+    if (config.projectMemory?.enabled === false) return;
+    const vaultPath = getVaultPath();
+    if (!vaultPath) return;
+    const slug = getProjectSlug(ctx.cwd);
+    lastProjectSlug = slug;
+    const core = execObsidianRead(vaultPath, projectCoreRel(slug));
+    if (!core) return;
+    return {
+      message: {
+        customType: "agents-memo-project-core",
+        content: `[agents-memo: project memory for ${slug}]\n${core}`,
+        display: false,
+      },
+    };
+  });
+
   // ── AC11: session_compact re-injects hot.md / index.md per bootstrap config ─
+  // and the cached project core.md (same pattern as hot/index).
   pi.on("session_compact", (_event: SessionCompactEvent) => {
     const config = readPiSettings();
     const vaultPath = getVaultPath();
@@ -499,6 +935,21 @@ export default function (pi: ExtensionAPI) {
       if (index) {
         pi.sendMessage(
           { customType: "agents-memo-index", content: `[agents-memo: wiki/index.md]\n${index}`, display: false },
+          { triggerTurn: false },
+        );
+      }
+    }
+    // Project core re-injection uses the slug cached at before_agent_start,
+    // never process.cwd() (which may have changed by compaction time).
+    if (config.projectMemory?.enabled !== false && lastProjectSlug) {
+      const core = execObsidianRead(vaultPath, projectCoreRel(lastProjectSlug));
+      if (core) {
+        pi.sendMessage(
+          {
+            customType: "agents-memo-project-core",
+            content: `[agents-memo: project memory for ${lastProjectSlug}]\n${core}`,
+            display: false,
+          },
           { triggerTurn: false },
         );
       }
@@ -585,8 +1036,8 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // ── AC16: agent_end - reflect the session into the daily note ──────────────
-  pi.on("agent_end", (_event, _ctx) => {
+  // ── AC16: agent_end - reflect the run into project memory (or legacy daily) ─
+  pi.on("agent_end", (event: AgentEndEvent, ctx: ExtensionContext) => {
     // Consume the per-run flag first so reflection never double-fires and the
     // next run starts clean (agent_end fires before agent_settled in the pi
     // runtime: _emitExtensionEvent → _emitAgentSettled).
@@ -594,13 +1045,31 @@ export default function (pi: ExtensionAPI) {
     vaultTouched = false;
     const vaultPath = getVaultPath();
     if (!vaultPath || !touched) return;
-    appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
+    const config = readPiSettings();
+    if (config.projectMemory?.enabled === false) {
+      // Legacy path: static global daily marker (sessions that opted out of
+      // per-project pages keep the old behavior unchanged).
+      appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
+      return;
+    }
+
+    const slug = getProjectSlug(ctx.cwd);
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 5);
+    const messages = (event.messages ?? []) as ReflectionMessage[];
+    if (messages.length === 0) return;
+    const reflection = spawnReflectionSubprocess(config, messages.slice(-8));
+    if (!reflection) return;
+    appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
+    updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);
   });
 
   // ── AC17: session_shutdown - end-of-session summary reflection ─────────────
   pi.on("session_shutdown", (_event, _ctx) => {
     const vaultPath = getVaultPath(); // for this session's reflection
     bootstrapServed = false; // next session in this process re-injects
+    lastProjectSlug = undefined; // stale slug must not leak into the next session
     // Consume the session flags so a shutdown landing mid-run never leaks
     // touches into the next session's first agent_end reflection.
     const touched = sessionTouched;
