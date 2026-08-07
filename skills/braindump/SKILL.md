@@ -1,7 +1,7 @@
 ---
 name: braindump
 description: Split long-form text into atomic inbox notes. Accepts inline text or file paths. Triage later via /note process.
-when_to_use: "/braindump <text or file paths>". Splits text into atomic notes in notes/ inbox.
+when_to_use: '"/braindump <text or file paths>". Splits text into atomic notes in notes/ inbox.'
 model: sonnet
 effort: medium
 user-invocable: true

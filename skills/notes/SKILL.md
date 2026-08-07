@@ -1,7 +1,7 @@
 ---
 name: notes
 description: Capture quick inbox notes without breaking flow. Verbatim, auto-match, per-project filtering, list/triage.
-when_to_use: "/note <text>" for quick capture, "/note list" to view inbox, "/note process" to triage.
+when_to_use: '"/note <text>" for quick capture, "/note list" to view inbox, "/note process" to triage.'
 model: sonnet
 effort: medium
 user-invocable: true

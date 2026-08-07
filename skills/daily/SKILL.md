@@ -1,7 +1,7 @@
 ---
 name: daily
 description: Append a timestamped bullet to today's daily log. One line per call.
-when_to_use: "/daily <text>", "log this", "add to today's log". Append-only — no list or triage.
+when_to_use: '"/daily <text>", "log this", "add to today''s log". Append-only — no list or triage.'
 model: haiku
 effort: low
 user-invocable: true
