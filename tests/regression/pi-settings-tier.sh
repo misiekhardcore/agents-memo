@@ -104,6 +104,22 @@ check "claude-tier boolean false resolves" "false" "$(bash "$RESOLVE_CONFIG" aut
 rm -f "$HOME/.claude/settings.json"
 check "claude-tier missing key falls to default" "on-demand" "$(bash "$RESOLVE_CONFIG" bootstrap_read_hot on-demand)"
 
+# 11. Nested projectMemory.enabled resolves from the global tier (the flat
+#     camelCase transform alone cannot reach a nested key).
+write_global '{"agentsMemo": { "projectMemory": { "enabled": true } }}'
+check "nested projectMemory.enabled resolves (global tier)" "true" "$(bash "$RESOLVE_CONFIG" project_memory_enabled)"
+
+# 12. Project tier fills the nested key the global block leaves undefined;
+#     boolean false must resolve (not fall to the default).
+write_global '{"agentsMemo": { "vaultPath": "~/vault" }}'
+mkdir -p "$HOME/vault"
+write_project '{"agentsMemo": { "projectMemory": { "enabled": false } }}'
+check "nested projectMemory.enabled from project tier (false resolves)" "false" "$(bash "$RESOLVE_CONFIG" project_memory_enabled)"
+
+# 13. No pi settings → project_memory_enabled falls to the default argument.
+rm -f "$HOME/.pi/agent/settings.json" "$SCRATCH/.pi/settings.json"
+check "project_memory_enabled default fallback" "true" "$(bash "$RESOLVE_CONFIG" project_memory_enabled true)"
+
 echo
 echo "=== summary ==="
 echo "  pass=$PASS  fail=$FAIL"

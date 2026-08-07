@@ -24,15 +24,24 @@ read_config_from_pi_settings() {
   if command -v jq >/dev/null 2>&1; then
     # `select(. != null) | tostring` keeps boolean false/0 resolvable (jq's
     # `// empty` treats false as empty and would silently fall to the default).
-    jq -r --arg key "$pi_key" '.agentsMemo[$key] | select(. != null) | tostring' "$file" 2>/dev/null | head -1
+    # projectMemory.enabled is the only nested key: the flat camelCase transform
+    # yields a key that doesn't exist, so it gets a literal nested path.
+    if [ "$KEY" = "project_memory_enabled" ]; then
+      jq -r '.agentsMemo.projectMemory.enabled | select(. != null) | tostring' "$file" 2>/dev/null | head -1
+    else
+      jq -r --arg key "$pi_key" '.agentsMemo[$key] | select(. != null) | tostring' "$file" 2>/dev/null | head -1
+    fi
   elif command -v python3 >/dev/null 2>&1; then
     SETTINGS_FILE="$file" CONFIG_KEY="$pi_key" python3 -c '
 import json, os
 try:
     with open(os.environ["SETTINGS_FILE"]) as f:
         d = json.load(f)
-    key = os.environ["CONFIG_KEY"]
-    val = d.get("agentsMemo", {}).get(key)
+    block = d.get("agentsMemo", {})
+    if os.environ["CONFIG_KEY"] == "projectMemoryEnabled":
+        val = block.get("projectMemory", {}).get("enabled")
+    else:
+        val = block.get(os.environ["CONFIG_KEY"])
     if val is not None:
         print(str(val).lower())
 except Exception:

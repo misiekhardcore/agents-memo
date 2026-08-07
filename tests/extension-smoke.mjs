@@ -13,11 +13,15 @@
 //   AC13    tool_execution_end hot-cache 0-byte guard
 //   AC14-15 agent_settled auto-commit + notify
 //   AC16-17 agent_end / session_shutdown reflection (write-verb touched tracking)
+//   PM      per-project memory: slug derivation, reflection subprocess,
+//           project daily + core.md pipeline, legacy fallback, core.md
+//           parse/merge/render pure functions, before_agent_start + compact
+//           injection of project core.md
 //   AC18-21 memo_dispatch discovery, frontmatter conversion, single/parallel/chain, registration
 
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -53,21 +57,49 @@ const execFakes = {
   hot: "hot cache injected\n",
   index: "# wiki index injected\n",
 };
+// Stateful simulation of the wiki/projects/<slug>/ subtree (project memory):
+// reads return what prior overwrites stored, so core.md merge/dedup/score can
+// be asserted end-to-end without Obsidian. Content is shell-decoded the same
+// way the real obsidian CLI round-trips literal \n → newline.
+const projectFiles = new Map();
+// Queue of canned `git remote get-url origin` outputs (slug derivation). The
+// extension's execSync binding is captured at import time, so the mock reads
+// from this mutable state instead of being reassigned per test.
+let gitUrlQueue = [];
+const decodeShell = (s) => s.replace(/\\n/g, "\n").replace(/\\"/g, '"');
 cp.execSync = (cmd) => {
   calls.exec.push(String(cmd));
   const c = String(cmd);
+  if (c.includes("git remote get-url origin")) return gitUrlQueue.shift() ?? "";
   if (c.includes('path=wiki/hot.md')) return execFakes.hot;
   if (c.includes('path=wiki/index.md')) return execFakes.index;
+  const projRead = c.match(/read "?path=(wiki\/projects\/[^\s"]+)/);
+  if (projRead) return projectFiles.get(projRead[1]) ?? "";
+  const projCreate = c.match(/create path=(wiki\/projects\/[^\s"]+) overwrite=true content="((?:[^"\\]|\\.)*)"/);
+  if (projCreate) {
+    projectFiles.set(projCreate[1], decodeShell(projCreate[2]));
+    return `Created: ${projCreate[1]}\n`;
+  }
   if (c.includes("create-or-append")) return "";
   return "";
 };
 // Synchronous git restore used by the AC13 hot-cache guard (spawnSync — no
-// shell interpolation of the vault path).
+// shell interpolation of the vault path). Also serves the project-memory
+// reflection subprocess: any pi --mode json invocation returns a canned
+// reflection as pi's JSON-lines message_end event.
+const REFLECTION_OUTPUT = { mistakes: ["m1", "m2"], fixes: ["f1", "f2"] };
 cp.spawnSync = (command, args) => {
   calls.exec.push([command, ...args].join(" "));
   if (args.includes("wiki/hot.md")) {
     // simulate a successful git restore from HEAD
     writeFileSync(join(VAULT, "wiki", "hot.md"), "hot cache restored\n");
+  } else if (args.includes("--mode") && args.includes("json")) {
+    const text = JSON.stringify(REFLECTION_OUTPUT);
+    return {
+      status: 0,
+      stdout: JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }] }}) + "\n",
+      stderr: "",
+    };
   }
   return { status: 0, stdout: "", stderr: "" };
 };
@@ -122,7 +154,7 @@ function createMockPi() {
       return Promise.resolve({ code: 0, stdout: "" });
     },
   };
-  const ctx = { hasUI: true, ui: { notify: () => { notifyCount++; } } };
+  const ctx = { hasUI: true, cwd: REPO, ui: { notify: () => { notifyCount++; } } };
   return {
     pi, handlers, tools, sent, execs,
     setGitDirty: (d) => { gitDirty = d; },
@@ -139,6 +171,34 @@ const memoMod = await jiti.import(join(REPO, "extensions", "agents-memo.ts"));
 const mock = createMockPi();
 memoMod.default(mock.pi);
 const toolCall = (id, toolName, input) => mock.handlers["tool_call"].map((h) => h({ toolCallId: id, toolName, input }, mock.ctx)).filter((r) => r !== undefined);
+
+// Seed a project core.md so before_agent_start / session_compact / the
+// reflection pipeline have content to read and merge into. The handler slug
+// derives from process.cwd() (repo root when run via `make test`), which is
+// basename(REPO) since the git-remote execSync mock returns "".
+const REPO_SLUG = basename(REPO);
+const CORE_SEED = [
+  "---",
+  "type: project-core",
+  `project: ${REPO_SLUG}`,
+  "created: 2026-08-06",
+  "updated: 2026-08-06",
+  "---",
+  "",
+  `# Project Learnings — ${REPO_SLUG}`,
+  "",
+  "## High-value learnings",
+  "- Keep edits small<!--score:1-->",
+  "",
+  "## Watch-outs",
+  "- Avoid: guess without verifying<!--score:1-->",
+  "",
+].join("\n");
+projectFiles.set(`wiki/projects/${REPO_SLUG}/core.md`, CORE_SEED);
+
+// agent_end event with the conversation pi provides; the smoke test drives
+// handlers directly, so messages must be supplied for the reflection path.
+const agentEndEv = (msgs) => ({ messages: msgs ?? [{ role: "user", content: "session test", timestamp: 0 }] });
 
 section("AC5 — MEMO_PLUGIN_PWD rewrite");
 {
@@ -218,46 +278,46 @@ section("AC16/17 — write-verb touched tracking");
   // Consume the per-run flag via agent_end (it resets the flag now, not
   // agent_settled) so this section starts from a clean slate.
   mock.setGitDirty(false);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   const appends = () => calls.exec.filter((c) => c.includes("create-or-append"));
   const before = appends().length;
   const readEv = { toolCallId: "t-r", toolName: "bash", input: { command: `obsidian read path=wiki/hot.md` } };
   mock.handlers["tool_call"][0](readEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before, "read-only session → no reflection append");
   const writeEv = { toolCallId: "t-w", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/x.md content="hello"` } };
   mock.handlers["tool_call"][0](writeEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 1, "write verb → agent_end reflection appended");
   assert(/daily\/\d{4}-\d{2}-\d{2}\.md/.test(appends().at(-1) ?? ""), "reflection targets daily/YYYY-MM-DD.md");
   // eval write verb (parity with log-obsidian-calls.sh's auto-commit verbs).
   const evalEv = { toolCallId: "t-eval", toolName: "bash", input: { command: `obsidian eval code="1"` } };
   mock.handlers["tool_call"][0](evalEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 2, "eval verb → agent_end reflection appended");
   // non-write verb (read) after a pipe to a write word must NOT touch (verb is
   // extracted positionally, mirroring log-obsidian-calls.sh).
   const pipeEv = { toolCallId: "t-pipe", toolName: "bash", input: { command: `obsidian read path=wiki/hot.md | grep append` } };
   mock.handlers["tool_call"][0](pipeEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 2, "read | grep append → no reflection (positional verb extraction)");
   // compound already-routed command: the LAST write verb wins (parity with
   // log-obsidian-calls.sh's greedy `s/.*obsidian-cli\.sh[^[:space:]]* //`).
   const compoundEv = { toolCallId: "t-compound", toolName: "bash", input: { command: `"${REPO}/scripts/obsidian-cli.sh" read path=wiki/hot.md && "${REPO}/scripts/obsidian-cli.sh" append file=wiki/hot.md content="x"` } };
   mock.handlers["tool_call"][0](compoundEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 3, "compound read && append → reflection appended (last verb wins)");
   // env-prefixed raw command (FOO=bar obsidian ...): bash strips leading
   // KEY=val assignments before extracting the verb — the extension must too.
   const envEv = { toolCallId: "t-env", toolName: "bash", input: { command: `FOO=bar obsidian append file=wiki/hot.md content="x"` } };
   mock.handlers["tool_call"][0](envEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 4, "env-prefixed obsidian append → reflection appended");
   // trailing wrapper with no verb: bash's greedy regex backtracks to the
   // prior wrapper occurrence and still extracts the verb.
   const trailEv = { toolCallId: "t-trail", toolName: "bash", input: { command: `"${REPO}/scripts/obsidian-cli.sh" append file=wiki/hot.md content="x" && "${REPO}/scripts/obsidian-cli.sh"` } };
   mock.handlers["tool_call"][0](trailEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 5, "trailing wrapper backtracks to prior verb → reflection appended");
 }
 
@@ -275,6 +335,13 @@ section("AC8-10 — before_agent_start injection");
   assert(types.includes("agents-memo-hot"), "hot.md injected when bootstrapReadHot=always");
   assert(results.find((r) => r.message.customType === "agents-memo-hot")?.message.content.includes("hot cache injected"), "hot.md content via obsidian-cli");
   assert(!types.includes("agents-memo-index"), "index.md NOT injected when bootstrapReadIndex=on-demand");
+  // AC-PM: project core.md injected when projectMemory enabled (default true),
+  // sourced from wiki/projects/<slug>/core.md via the obsidian CLI.
+  const coreMsg = results.find((r) => r.message.customType === "agents-memo-project-core")?.message;
+  assert(!!coreMsg, "project core.md injected when projectMemory enabled (default)");
+  assert(coreMsg?.display === false, "project core message display:false");
+  assert(coreMsg?.content.includes("project memory for "), "project core injected with slug prefix");
+  assert(coreMsg?.content.includes("Keep edits small"), "project core content from vault core.md");
 }
 
 section("AC11 — session_compact re-injection");
@@ -284,6 +351,11 @@ section("AC11 — session_compact re-injection");
   assert(hotSends.length === 1, "hot.md re-injected via sendMessage");
   assert(hotSends[0]?.opts?.triggerTurn === false, "re-injection does not trigger a turn");
   assert(!mock.sent.some((s) => s.msg.customType === "agents-memo-index"), "index.md not re-injected (on-demand)");
+  // AC-PM: project core re-injected from the slug cached at before_agent_start.
+  const coreSends = mock.sent.filter((s) => s.msg.customType === "agents-memo-project-core");
+  assert(coreSends.length === 1, "project core.md re-injected on session_compact");
+  assert(coreSends[0]?.opts?.triggerTurn === false, "project core re-injection does not trigger a turn");
+  assert(coreSends[0]?.msg.content.includes("project memory for "), "project core re-injection has slug prefix");
 }
 
 section("AC13 — hot-cache 0-byte guard");
@@ -374,6 +446,115 @@ section("AC17 — session_shutdown vault-cache invalidation");
     process.chdir(cwdA);
   }
   writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+}
+
+section("project-memory — slug derivation (git remote + sanitization)");
+{
+  gitUrlQueue = [
+    "git@github.com:misiekhardcore/My_Repo.git\n",
+    "https://github.com/owner/repo-name.git\n",
+    "git@github.com:owner/repo.git\n",
+  ];
+  try {
+    assert(memoMod.getProjectSlug("/tmp/cwd") === "my-repo", "git ssh URL → sanitized repo name (underscore → hyphen)");
+    assert(memoMod.getProjectSlug("/tmp/cwd") === "repo-name", "git https URL → repo name");
+    assert(memoMod.getProjectSlug("/tmp/cwd") === "repo", "git URL → bare repo name");
+    assert(memoMod.getProjectSlug("/tmp/My Dir") === "my-dir", "no git → basename fallback (spaces → hyphens)");
+    assert(memoMod.getProjectSlug("/tmp/My.Dir_1") === "my-dir-1", "basename dots/underscores → hyphens");
+    assert(memoMod.getProjectSlug("/") === "unknown", "empty basename → unknown fallback");
+  } finally {
+    gitUrlQueue = [];
+  }
+}
+
+section("project-memory — core.md pure functions");
+{
+  const { parseCoreFile, mergeReflection, renderCoreFile } = memoMod;
+  const parsed = parseCoreFile(CORE_SEED);
+  assert(parsed.learnings.length === 1 && parsed.learnings[0].text === "Keep edits small" && parsed.learnings[0].score === 1, "parse: learning bullet with score marker");
+  assert(parsed.watchouts.length === 1 && parsed.watchouts[0].text === "guess without verifying" && parsed.watchouts[0].score === 1, "parse: watch-out 'Avoid:' prefix stripped");
+  assert(!parsed.learnings[0].text.includes("<!--"), "parse: score marker not part of entry text");
+
+  const reflection = { mistakes: ["guess without verifying", "new mistake"], fixes: ["Keep edits small", "write tests first"] };
+  const merged = mergeReflection(parsed, reflection, 20);
+  assert(merged.learnings.length === 2, "merge: existing learning + new fix");
+  assert(merged.learnings.find((e) => e.text === "Keep edits small")?.score === 2, "merge: existing entry score incremented");
+  assert(merged.learnings.find((e) => e.text === "write tests first")?.score === 1, "merge: new entry starts at score 1");
+  assert(merged.watchouts.find((e) => e.text === "guess without verifying")?.score === 2, "merge: existing watch-out score incremented");
+  assert(merged.watchouts.some((e) => e.text === "new mistake"), "merge: new watch-out added");
+
+  const capped = mergeReflection({ learnings: [], watchouts: [] }, { mistakes: [], fixes: ["a", "b", "c", "d"] }, 3);
+  assert(capped.learnings.length === 3, "merge: capped at maxItems");
+  const dup = mergeReflection({ learnings: [{ text: "Keep Edits Small", score: 1 }], watchouts: [] }, { mistakes: [], fixes: ["Keep edits   small"] }, 5);
+  assert(dup.learnings.length === 1 && dup.learnings[0].score === 2, "merge: dedup by normalized key (case + whitespace)");
+
+  const rendered = renderCoreFile(REPO_SLUG, "2026-08-06", merged);
+  assert(rendered.includes("type: project-core"), "render: frontmatter");
+  assert(rendered.includes("## High-value learnings"), "render: learnings section");
+  assert(rendered.includes("<!--score:2-->"), "render: score marker");
+  assert(rendered.includes("- Avoid: guess without verifying"), "render: watch-outs prefixed with Avoid:");
+  const reparsed = parseCoreFile(rendered);
+  assert(reparsed.learnings.length === merged.learnings.length, "render → parse round-trip preserves learnings");
+}
+
+section("project-memory — agent_end reflection pipeline");
+{
+  // consume any residual touched flag
+  mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx));
+  const execBefore = calls.exec.length;
+  const writeEv = { toolCallId: "t-pm1", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/pm.md content="x"` } };
+  mock.handlers["tool_call"][0](writeEv, mock.ctx);
+  const conv = [
+    { role: "user", content: "fix the merge bug", timestamp: 1 },
+    { role: "assistant", content: [{ type: "text", text: "I changed the merge logic" }], timestamp: 2 },
+  ];
+  mock.handlers["agent_end"].forEach((h) => h({ messages: conv }, mock.ctx));
+  const slice = calls.exec.slice(execBefore);
+
+  const spawn = slice.find((c) => c.includes("--no-session"));
+  assert(!!spawn, "agent_end spawns reflection subprocess");
+  assert(spawn?.includes("--mode json"), "reflection spawns pi --mode json");
+  assert(spawn?.includes("--provider deepseek"), "reflection uses reflectModel provider");
+  assert(spawn?.includes("--model deepseek-v4-flash"), "reflection uses reflectModel id");
+  assert(spawn?.includes("<conversation>"), "reflection prompt embeds conversation");
+  assert(spawn?.includes("Assistant: I changed the merge logic"), "reflection conversation serialized");
+
+  const projAppend = slice.filter((c) => c.includes("create-or-append") && c.includes("wiki/projects/"));
+  assert(projAppend.length === 1, "agent_end appends project daily entry");
+  assert(/wiki\/projects\/[^\s]+\/daily\/\d{4}-\d{2}-\d{2}\.md/.test(projAppend[0] ?? ""), "project daily targets wiki/projects/<slug>/daily/YYYY-MM-DD.md");
+  assert(slice.some((c) => c.includes("create") && c.includes("wiki/projects/") && c.includes("overwrite=true")), "core.md overwritten via obsidian create");
+
+  const coreContent = projectFiles.get(`wiki/projects/${REPO_SLUG}/core.md`) ?? "";
+  assert(coreContent.includes("## High-value learnings"), "core.md has learnings section");
+  assert(coreContent.includes("f1") && coreContent.includes("f2"), "core.md contains reflection fixes");
+  assert(coreContent.includes("- Avoid: m1"), "core.md watch-outs render with Avoid: prefix");
+  // The seeded learning survives (not part of this reflection) and the
+  // reflection entries were merged in - scores tracked via markers.
+  assert(coreContent.includes("Keep edits small"), "core.md preserves pre-existing learnings");
+  assert(/<!--score:\d+-->/.test(coreContent), "core.md entries carry score markers");
+}
+
+section("project-memory — enabled=false falls back to legacy daily marker");
+{
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+    agentsMemo: { vaultPath: VAULT, projectMemory: { enabled: false } },
+  }));
+  try {
+    mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx)); // consume residual flag
+    const execBefore = calls.exec.length;
+    const writeEv = { toolCallId: "t-pm2", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/legacy.md content="x"` } };
+    mock.handlers["tool_call"][0](writeEv, mock.ctx);
+    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const slice = calls.exec.slice(execBefore);
+    const appends = slice.filter((c) => c.includes("create-or-append"));
+    assert(appends.length === 1, "enabled=false → legacy global daily append");
+    assert(/daily\/\d{4}-\d{2}-\d{2}\.md/.test(appends[0] ?? ""), "legacy append targets global daily/YYYY-MM-DD.md");
+    assert(!(appends[0] ?? "").includes("wiki/projects/"), "legacy append is NOT project-scoped");
+    assert(!slice.some((c) => c.includes("--no-session")), "enabled=false → no reflection subprocess spawned");
+  } finally {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+  }
 }
 
 section("M2 — claude settings tiers in extension resolution");
