@@ -5,18 +5,22 @@
  *   - tool_call: rewrites ${MEMO_PLUGIN_PWD} and leading `obsidian` calls to
  *     scripts/obsidian-cli.sh, blocks daily/*.md overwrites (issue #98), and
  *     blocks direct read/write/edit on vault paths.
- *   - before_agent_start / session_compact: injects _shared/INIT.md and the
- *     hot cache / index when bootstrap config says "always".
+ *   - before_agent_start / session_compact: injects _shared/INIT.md, the
+ *     hot cache / index when bootstrap config says "always", and the
+ *     project+global memory digest (per-project-memory.md §9.4).
  *   - tool_execution_end: guards wiki/hot.md against silent 0-byte corruption.
  *   - agent_settled: auto-commits vault git changes and notifies.
- *   - agent_end / session_shutdown: appends session reflections to daily notes.
+ *   - agent_end: distills the run into project + global cores (reflection).
+ *   - session_shutdown: end-of-session daily marker + cross-project
+ *     promotion sweep into wiki/global-core.md (§9.6); /wiki promote-global
+ *     triggers the same sweep on demand.
  *
  * API surface: @earendil-works/pi-coding-agent (installed pi@0.83.0). Validated
  * with `tsc --noEmit --strict` against the installed package's dist types.
  */
 
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +48,22 @@ interface ProjectMemoryConfig {
   enabled: boolean;
   maxLearningsPerReflection: number;
   maxCoreItems: number;
+  globalEnabled: boolean;
+  maxGlobalItems: number;
+  promotionThreshold: number;
+  reflectUntouchedRuns: boolean;
+}
+
+interface MemoryInjectionConfig {
+  sessionStart: boolean;
+  reInjectOnCompact: boolean;
+  digestBudgetChars: number;
+  projectCoreTop: number;
+  globalCoreTop: number;
+}
+
+interface PageCandidacyConfig {
+  threshold: number;
 }
 
 interface ReflectModelConfig {
@@ -58,12 +78,30 @@ interface AgentsMemoConfig {
   autoCommit?: boolean;
   projectMemory?: ProjectMemoryConfig;
   reflectModel?: ReflectModelConfig;
+  memoryInjection?: MemoryInjectionConfig;
+  pageCandidacy?: PageCandidacyConfig;
 }
 
 const PROJECT_MEMORY_DEFAULTS: ProjectMemoryConfig = {
   enabled: true,
   maxLearningsPerReflection: 5,
   maxCoreItems: 20,
+  globalEnabled: true,
+  maxGlobalItems: 20,
+  promotionThreshold: 2,
+  reflectUntouchedRuns: true,
+};
+
+const DEFAULT_MEMORY_INJECTION: MemoryInjectionConfig = {
+  sessionStart: true,
+  reInjectOnCompact: true,
+  digestBudgetChars: 800,
+  projectCoreTop: 5,
+  globalCoreTop: 5,
+};
+
+const DEFAULT_PAGE_CANDIDACY: PageCandidacyConfig = {
+  threshold: 3,
 };
 
 const REFLECT_MODEL_DEFAULTS: ReflectModelConfig = {
@@ -71,19 +109,82 @@ const REFLECT_MODEL_DEFAULTS: ReflectModelConfig = {
   id: "deepseek-v4-flash",
 };
 
+// Per-key validators for each nested block (type-gated merge). Declared as
+// typed constants so the merge helper infers T from the merged argument,
+// keeping the value types intact.
+type NestedKeyValidator = (v: unknown) => boolean;
+
+const isBoolean: NestedKeyValidator = (v) => typeof v === "boolean";
+// Numeric keys are counts/budgets/thresholds: NaN, ±Infinity (JSON.parse
+// accepts 1e999 → Infinity) and negatives would silently degrade digest
+// budgets, caps and thresholds, so they are rejected and fall back to
+// defaults instead of being honored.
+const isCount: NestedKeyValidator = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
+const isString: NestedKeyValidator = (v) => typeof v === "string";
+
+const PROJECT_MEMORY_SPEC: Record<keyof ProjectMemoryConfig, NestedKeyValidator> = {
+  enabled: isBoolean,
+  maxLearningsPerReflection: isCount,
+  maxCoreItems: isCount,
+  globalEnabled: isBoolean,
+  maxGlobalItems: isCount,
+  promotionThreshold: isCount,
+  reflectUntouchedRuns: isBoolean,
+};
+
+const REFLECT_MODEL_SPEC: Record<keyof ReflectModelConfig, NestedKeyValidator> = {
+  provider: isString,
+  id: isString,
+};
+
+const MEMORY_INJECTION_SPEC: Record<keyof MemoryInjectionConfig, NestedKeyValidator> = {
+  sessionStart: isBoolean,
+  reInjectOnCompact: isBoolean,
+  digestBudgetChars: isCount,
+  projectCoreTop: isCount,
+  globalCoreTop: isCount,
+};
+
+const PAGE_CANDIDACY_SPEC: Record<keyof PageCandidacyConfig, NestedKeyValidator> = {
+  threshold: isCount,
+};
+
 // Per-key first-wins, matching resolve-vault.sh / resolve-config.sh tier
 // 0a/0b: for each key the global file (~/.pi/agent/settings.json) wins; the
 // project file (.pi/settings.json) only fills keys the global file leaves
 // undefined. A global block that defines only autoCommit must not shadow a
-// project vaultPath. projectMemory / reflectModel are merged the same way at
-// their own sub-key level, then defaults are applied with nullish coalescing
-// so explicit user values are never overwritten.
-function readPiSettings(): AgentsMemoConfig {
+// project vaultPath. projectMemory / reflectModel / memoryInjection /
+// pageCandidacy are merged the same way at their own sub-key level, then
+// defaults are applied with nullish coalescing so explicit user values are
+// never overwritten.
+
+// Per-key first-wins merge for one nested config block: keys defined in the
+// global file win, the project file fills only keys left undefined, and
+// values are type-gated so malformed settings never leak through. Shared by
+// all nested blocks so the merge semantics can never diverge between them.
+function mergeNestedBlock<T extends object>(merged: Partial<T> | undefined, block: unknown, spec: Record<keyof T, NestedKeyValidator>): Partial<T> {
+  const target: Partial<T> = merged ?? {};
+  if (!block || typeof block !== "object") return target;
+  for (const key of Object.keys(spec) as Array<keyof T>) {
+    const value = (block as Record<string, unknown>)[key as string];
+    if (target[key] === undefined && spec[key](value)) {
+      (target as Record<string, unknown>)[key as string] = value;
+    }
+  }
+  return target;
+}
+
+// Exported for the smoke test (pi only invokes the default export).
+export function readPiSettings(): AgentsMemoConfig {
   const files = [
     join(homedir(), ".pi", "agent", "settings.json"),
     join(process.cwd(), ".pi", "settings.json"),
   ];
   const merged: AgentsMemoConfig = {};
+  const projectMemory: Partial<ProjectMemoryConfig> = {};
+  const reflectModel: Partial<ReflectModelConfig> = {};
+  const memoryInjection: Partial<MemoryInjectionConfig> = {};
+  const pageCandidacy: Partial<PageCandidacyConfig> = {};
   for (const f of files) {
     try {
       const parsed = JSON.parse(readFileSync(f, "utf-8"));
@@ -97,36 +198,38 @@ function readPiSettings(): AgentsMemoConfig {
         merged.bootstrapReadIndex = block.bootstrapReadIndex;
       }
       if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined) merged.autoCommit = block.autoCommit;
-      // projectMemory sub-keys (per-key first-wins at the nested level too).
-      if (typeof block.projectMemory?.enabled === "boolean" && merged.projectMemory?.enabled === undefined) {
-        (merged.projectMemory ??= {} as ProjectMemoryConfig).enabled = block.projectMemory.enabled;
-      }
-      if (typeof block.projectMemory?.maxLearningsPerReflection === "number" && merged.projectMemory?.maxLearningsPerReflection === undefined) {
-        (merged.projectMemory ??= {} as ProjectMemoryConfig).maxLearningsPerReflection = block.projectMemory.maxLearningsPerReflection;
-      }
-      if (typeof block.projectMemory?.maxCoreItems === "number" && merged.projectMemory?.maxCoreItems === undefined) {
-        (merged.projectMemory ??= {} as ProjectMemoryConfig).maxCoreItems = block.projectMemory.maxCoreItems;
-      }
-      // reflectModel sub-keys.
-      if (typeof block.reflectModel?.provider === "string" && merged.reflectModel?.provider === undefined) {
-        (merged.reflectModel ??= {} as ReflectModelConfig).provider = block.reflectModel.provider;
-      }
-      if (typeof block.reflectModel?.id === "string" && merged.reflectModel?.id === undefined) {
-        (merged.reflectModel ??= {} as ReflectModelConfig).id = block.reflectModel.id;
-      }
+      // Nested blocks: per-key first-wins at the nested level too.
+      mergeNestedBlock(projectMemory, block.projectMemory, PROJECT_MEMORY_SPEC);
+      mergeNestedBlock(reflectModel, block.reflectModel, REFLECT_MODEL_SPEC);
+      mergeNestedBlock(memoryInjection, block.memoryInjection, MEMORY_INJECTION_SPEC);
+      mergeNestedBlock(pageCandidacy, block.pageCandidacy, PAGE_CANDIDACY_SPEC);
     } catch {
       // missing or unparseable - skip
     }
   }
   // Defaults for keys the merge left undefined - never overwrite user values.
   merged.projectMemory = {
-    enabled: merged.projectMemory?.enabled ?? PROJECT_MEMORY_DEFAULTS.enabled,
-    maxLearningsPerReflection: merged.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection,
-    maxCoreItems: merged.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems,
+    enabled: projectMemory.enabled ?? PROJECT_MEMORY_DEFAULTS.enabled,
+    maxLearningsPerReflection: projectMemory.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection,
+    maxCoreItems: projectMemory.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems,
+    globalEnabled: projectMemory.globalEnabled ?? PROJECT_MEMORY_DEFAULTS.globalEnabled,
+    maxGlobalItems: projectMemory.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+    promotionThreshold: projectMemory.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
+    reflectUntouchedRuns: projectMemory.reflectUntouchedRuns ?? PROJECT_MEMORY_DEFAULTS.reflectUntouchedRuns,
   };
   merged.reflectModel = {
-    provider: merged.reflectModel?.provider ?? REFLECT_MODEL_DEFAULTS.provider,
-    id: merged.reflectModel?.id ?? REFLECT_MODEL_DEFAULTS.id,
+    provider: reflectModel.provider ?? REFLECT_MODEL_DEFAULTS.provider,
+    id: reflectModel.id ?? REFLECT_MODEL_DEFAULTS.id,
+  };
+  merged.memoryInjection = {
+    sessionStart: memoryInjection.sessionStart ?? DEFAULT_MEMORY_INJECTION.sessionStart,
+    reInjectOnCompact: memoryInjection.reInjectOnCompact ?? DEFAULT_MEMORY_INJECTION.reInjectOnCompact,
+    digestBudgetChars: memoryInjection.digestBudgetChars ?? DEFAULT_MEMORY_INJECTION.digestBudgetChars,
+    projectCoreTop: memoryInjection.projectCoreTop ?? DEFAULT_MEMORY_INJECTION.projectCoreTop,
+    globalCoreTop: memoryInjection.globalCoreTop ?? DEFAULT_MEMORY_INJECTION.globalCoreTop,
+  };
+  merged.pageCandidacy = {
+    threshold: pageCandidacy.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
   };
   return merged;
 }
@@ -192,6 +295,11 @@ function escapeShellContent(text: string): string {
   return text
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
+    // $ and backticks are live in double-quoted shell args (command
+    // substitution): model-generated reflection text must never reach the
+    // shell unescaped (verified: $(echo PWNED) executes without these).
+    .replace(/\$/g, "\\$")
+    .replace(/`/g, "\\`")
     .replace(/\r?\n/g, "\\n");
 }
 
@@ -264,18 +372,39 @@ function getInitContent(): string {
   return initContent;
 }
 
-function execObsidianRead(vaultPath: string, relPath: string): string | null {
+interface ObsidianReadResult {
+  ok: boolean;
+  content: string;
+}
+
+// Safe core read: distinguishes "file missing" from "read failed" so write
+// pipelines never mistake a transient CLI failure for an empty file. The
+// obsidian-cli.sh wrapper normalizes the upstream CLI's always-zero exit to
+// exit 1 with `Error: File "<path>" not found.` on stdout when the target
+// file is missing; that specific shape is a normal cold-start condition and
+// reports as ok with empty content. Any other failure (preflight, vault
+// resolution, generic CLI error) reports as not-ok and callers skip the
+// write. Exported for the smoke test (pi only invokes the default export).
+export function execObsidianReadSafe(vaultPath: string, relPath: string): ObsidianReadResult {
   try {
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
-    return execSync(`bash "${obsCli}" read "path=${relPath}"`, {
+    const content = execSync(`bash "${obsCli}" read "path=${relPath}"`, {
       cwd: vaultPath,
       encoding: "utf-8",
       timeout: 10000,
       stdio: ["ignore", "pipe", "pipe"],
     });
-  } catch {
-    return null;
+    return { ok: true, content };
+  } catch (err) {
+    const out = String((err as { stdout?: unknown })?.stdout ?? "");
+    if (/Error: File .* not found/.test(out)) return { ok: true, content: "" };
+    return { ok: false, content: "" };
   }
+}
+
+function execObsidianRead(vaultPath: string, relPath: string): string | null {
+  const result = execObsidianReadSafe(vaultPath, relPath);
+  return result.ok ? result.content : null;
 }
 
 // ─── Bypass allowlist for direct vault I/O ─────────────────────────────────────
@@ -430,6 +559,7 @@ function isDailyOverwrite(command: string): boolean {
 interface Reflection {
   mistakes: string[];
   fixes: string[];
+  global?: string[];
 }
 
 // Minimal structural view of the messages pi passes to agent_end. Avoids a
@@ -483,14 +613,17 @@ function serializeMessages(messages: ReflectionMessage[]): string {
   return joined.length > MAX_TOTAL ? joined.slice(-MAX_TOTAL) : joined;
 }
 
-function buildReflectionSystemPrompt(maxItems: number): string {
+// Exported for the smoke test (pi only invokes the default export).
+export function buildReflectionSystemPrompt(maxItems: number): string {
   return [
     "You are a coding session mistake-prevention reflection engine.",
     "Focus on what went wrong and how it was fixed.",
-    'Return STRICT JSON only: {"mistakes":["..."],"fixes":["..."]}',
+    'Return STRICT JSON only: {"mistakes":["..."],"fixes":["..."],"global":["..."]}',
     `- Keep each array short (max ${maxItems}).`,
     "- Prefer specific, actionable, prevention-oriented points.",
     "- Rewrite project-specific details into generic rules.",
+    '- Put anything reusable across projects in "global": design patterns, non-trivial bug fixes, architecture decisions.',
+    "- Write global items generically - no project names, paths, or other project-specific identifiers.",
   ].join("\n");
 }
 
@@ -502,14 +635,18 @@ function finalAssistantText(content: unknown): string {
     .join("\n");
 }
 
-function parseReflectionJson(text: string): Reflection | null {
+// Exported for the smoke test (pi only invokes the default export).
+export function parseReflectionJson(text: string): Reflection | null {
   const parse = (candidate: string): Reflection | null => {
     try {
-      const parsed = JSON.parse(candidate) as { mistakes?: unknown; fixes?: unknown };
+      const parsed = JSON.parse(candidate) as { mistakes?: unknown; fixes?: unknown; global?: unknown };
       const mistakes = Array.isArray(parsed.mistakes) ? parsed.mistakes.filter((m): m is string => typeof m === "string") : [];
       const fixes = Array.isArray(parsed.fixes) ? parsed.fixes.filter((m): m is string => typeof m === "string") : [];
-      if (mistakes.length === 0 && fixes.length === 0) return null;
-      return { mistakes, fixes };
+      const global = Array.isArray(parsed.global) ? parsed.global.filter((m): m is string => typeof m === "string") : [];
+      // Valid when any bucket is non-empty: a global-only reflection (pure
+      // reusable learnings, nothing went wrong) is a legitimate outcome.
+      if (mistakes.length === 0 && fixes.length === 0 && global.length === 0) return null;
+      return { mistakes, fixes, global };
     } catch {
       return null;
     }
@@ -609,6 +746,10 @@ function appendProjectDailyEntry(
 interface CoreEntry {
   text: string;
   score: number;
+  // Cross-project provenance (promotion sweep, §9.6): slugs of the project
+  // cores an entry was promoted from. Render-side metadata like the score
+  // marker — stripped from text on parse, never part of the bullet body.
+  from?: string[];
 }
 
 interface ProjectCore {
@@ -617,9 +758,25 @@ interface ProjectCore {
 }
 
 const SCORE_MARKER_RE = /<!--score:(\d+)-->\s*$/;
+const CANDIDATE_MARKER_RE = /<!--candidate-->/g;
+const FROM_MARKER_RE = /<!--from:[^>]*-->/g; // strip (normalizeKey)
+const FROM_EXTRACT_RE = /<!--from:([^>]*)-->\s*/; // capture (parseCoreFile)
+const WIKILINK_RE = /\[\[[^\]]*\]\]/g;
 
+// Normalized dedup key: lowercase, whitespace collapsed. [[wikilinks]], the
+// <!--candidate--> render marker and the <!--from:...--> provenance marker are
+// stripped so a promoted pointer bullet still dedups against the raw
+// reflection text it came from. A bullet that is nothing but a link falls
+// back to its raw text so distinct pointers never collide on an empty key.
 function normalizeKey(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, " ").trim();
+  const stripped = text
+    .toLowerCase()
+    .replace(WIKILINK_RE, "")
+    .replace(CANDIDATE_MARKER_RE, "")
+    .replace(FROM_MARKER_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped || text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 // Parse a core.md document into entries. Bullets carry an invisible HTML
@@ -642,6 +799,15 @@ export function parseCoreFile(text: string): ProjectCore {
     }
     if (section && line.startsWith("- ")) {
       let body = line.slice(2).trimEnd();
+      // Render-side markers (candidate, provenance, score) — never part of
+      // the entry text; stripped in marker order so any layout round-trips.
+      body = body.replace(CANDIDATE_MARKER_RE, "").trimEnd();
+      let from: string[] | undefined;
+      const fromM = body.match(FROM_EXTRACT_RE);
+      if (fromM) {
+        from = fromM[1].split(",").filter(Boolean);
+        body = body.replace(FROM_EXTRACT_RE, "").trimEnd();
+      }
       let score = 1;
       const scoreM = body.match(SCORE_MARKER_RE);
       if (scoreM) {
@@ -650,10 +816,39 @@ export function parseCoreFile(text: string): ProjectCore {
       }
       if (section === "watchouts" && body.startsWith("Avoid: ")) body = body.slice("Avoid: ".length).trim();
       if (!body || body === "(none yet)") continue;
-      (section === "learnings" ? learnings : watchouts).push({ text: body, score });
+      const entry: CoreEntry = { text: body, score };
+      if (from?.length) entry.from = from;
+      (section === "learnings" ? learnings : watchouts).push(entry);
     }
   }
   return { learnings, watchouts };
+}
+
+// Merge incoming strings (or provenance-carrying promoted items) into an
+// entry list: dedup by normalized key, score+1 on a hit (provenance unions),
+// new entries start at 1. Sorted by score desc (stable for ties), capped at
+// maxItems. Shared by the project and global cores and the promotion sweep so
+// the dedup/score/cap semantics can never diverge between them.
+function mergeEntries(entries: CoreEntry[], incoming: Array<string | { text: string; from?: string[] }>, maxItems: number): CoreEntry[] {
+  const byKey = new Map(entries.map((e) => [normalizeKey(e.text), e]));
+  for (const raw of incoming) {
+    const item = typeof raw === "string" ? { text: raw } : raw;
+    const text = item.text.trim();
+    if (!text) continue;
+    const key = normalizeKey(text);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.score += 1;
+      if (item.from?.length) {
+        existing.from = [...new Set([...(existing.from ?? []), ...item.from])].sort();
+      }
+    } else {
+      const entry: CoreEntry = { text, score: 1 };
+      if (item.from?.length) entry.from = [...item.from].sort();
+      byKey.set(key, entry);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, maxItems);
 }
 
 // Merge a reflection into existing entries: fixes → learnings, mistakes →
@@ -661,21 +856,9 @@ export function parseCoreFile(text: string): ProjectCore {
 // on a normalized-text hit; new entries start at 1. Sorted by score desc,
 // capped at maxItems. No age-based decay (non-goal: simple cap + recency).
 export function mergeReflection(core: ProjectCore, reflection: Reflection, maxItems: number): ProjectCore {
-  const mergeInto = (entries: CoreEntry[], incoming: string[]): CoreEntry[] => {
-    const byKey = new Map(entries.map((e) => [normalizeKey(e.text), e]));
-    for (const raw of incoming) {
-      const text = raw.trim();
-      if (!text) continue;
-      const key = normalizeKey(text);
-      const existing = byKey.get(key);
-      if (existing) existing.score += 1;
-      else byKey.set(key, { text, score: 1 });
-    }
-    return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, maxItems);
-  };
   return {
-    learnings: mergeInto(core.learnings, reflection.fixes),
-    watchouts: mergeInto(core.watchouts, reflection.mistakes),
+    learnings: mergeEntries(core.learnings, reflection.fixes, maxItems),
+    watchouts: mergeEntries(core.watchouts, reflection.mistakes, maxItems),
   };
 }
 
@@ -694,7 +877,7 @@ export function renderCoreFile(slug: string, dateStr: string, core: ProjectCore)
   );
 }
 
-function updateProjectCore(
+export function updateProjectCore(
   vaultPath: string,
   slug: string,
   dateStr: string,
@@ -704,8 +887,13 @@ function updateProjectCore(
   try {
     ensureProjectDir(vaultPath, slug);
     const relPath = projectCoreRel(slug);
-    const existing = execObsidianRead(vaultPath, relPath);
-    const core = existing ? parseCoreFile(existing) : { learnings: [], watchouts: [] };
+    // Read-failure guard (parity with updateGlobalCore): a transient CLI
+    // failure must not be conflated with an empty store, or the accumulated
+    // project corpus gets clobbered. Missing file (ok, empty content)
+    // proceeds from an empty core — phase-1 happy path unchanged.
+    const read = execObsidianReadSafe(vaultPath, relPath);
+    if (!read.ok) return;
+    const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
     const merged = mergeReflection(core, reflection, maxCoreItems);
     const rendered = renderCoreFile(slug, dateStr, merged);
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
@@ -716,6 +904,213 @@ function updateProjectCore(
   } catch {
     // best-effort - never fail the agent loop
   }
+}
+
+// ─── wiki/global-core.md management ──────────────────────────────────────────
+// Global core: cross-project learnings from the reflection's global bucket
+// (docs/per-project-memory.md §9.5). Same engine as project cores; the file
+// lives at the wiki root and carries no project slug. Bullets whose score
+// reaches candidacyThreshold render a <!--candidate--> marker (page-candidacy
+// nudge, §9.6); sweep-promoted bullets additionally carry a <!--from:...-->
+// provenance marker. Frontmatter keeps the ORIGINAL created date — only
+// updated refreshes on each merge (a clobbered created date would lose the
+// store's birth record).
+
+// The created date is extracted from the existing file before a merge so a
+// re-render never stamps over it. Missing/absent frontmatter → undefined,
+// and the caller falls back to today.
+function extractCreatedDate(content: string): string | undefined {
+  const m = content.match(/^created:\s*(\S+)/m);
+  return m?.[1];
+}
+
+export function renderGlobalCore(createdDate: string, updatedDate: string, learnings: CoreEntry[], candidacyThreshold: number): string {
+  const renderSection = (entries: CoreEntry[]): string => {
+    if (entries.length === 0) return `## High-value learnings\n- (none yet)\n`;
+    const bullets = entries.map((e) => {
+      const candidate = e.score >= candidacyThreshold ? "<!--candidate-->" : "";
+      const provenance = e.from?.length ? `<!--from:${e.from.join(",")}-->` : "";
+      return `- ${e.text}${provenance}<!--score:${e.score}-->${candidate}`;
+    });
+    return `## High-value learnings\n${bullets.join("\n")}\n`;
+  };
+  return (
+    `---\ntype: global-core\ncreated: ${createdDate}\nupdated: ${updatedDate}\n---\n\n` +
+    `# Global Learnings\n\n` +
+    renderSection(learnings)
+  );
+}
+
+// Read wiki/global-core.md (missing = empty core), merge reflection.global
+// into learnings with the same dedup/score-increment/cap logic as project
+// cores, render, overwrite via the obsidian CLI. Best-effort: never fail the
+// agent loop.
+export function updateGlobalCore(
+  vaultPath: string,
+  dateStr: string,
+  reflection: Reflection,
+  maxGlobalItems: number,
+  candidacyThreshold: number,
+): void {
+  try {
+    const relPath = "wiki/global-core.md";
+    // Read-failure guard: a transient CLI failure must not be conflated with
+    // an empty store, or the accumulated corpus gets clobbered by a render of
+    // just this reflection. Missing file (ok, empty content) proceeds.
+    const read = execObsidianReadSafe(vaultPath, relPath);
+    if (!read.ok) return;
+    const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
+    const merged = mergeEntries(core.learnings, reflection.global ?? [], maxGlobalItems);
+    const rendered = renderGlobalCore(extractCreatedDate(read.content) ?? dateStr, dateStr, merged, candidacyThreshold);
+    const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
+    execSync(
+      `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
+      { cwd: vaultPath, encoding: "utf-8", timeout: 10000 },
+    );
+  } catch {
+    // best-effort - never fail the agent loop
+  }
+}
+
+// ─── Promotion sweep (phase-2 §9.6) ─────────────────────────────────────────
+// Cross-project promotion, deterministic (no LLM): entries that appear in
+// >= promotionThreshold DISTINCT project cores are promoted verbatim into
+// wiki/global-core.md with a <!--from:slugA,slugB--> provenance marker. The
+// reflection engine's `global` bucket (§9.3) stays the semantic channel; the
+// sweep only catches near-identical repeats across projects.
+//
+// Pure counting helper (exported for the smoke test) counts normalized-dedup
+// occurrences per project: a text repeated twice in ONE project still counts
+// once, so the threshold measures spread, not volume.
+
+export function findCrossProjectEntries(projects: Record<string, string[]>, threshold: number): string[] {
+  return collectCrossProjectEntries(projects, threshold).map((e) => e.text);
+}
+
+interface PromotedEntry {
+  text: string;
+  slugs: string[];
+}
+
+function collectCrossProjectEntries(projects: Record<string, string[]>, threshold: number): PromotedEntry[] {
+  const byKey = new Map<string, { text: string; slugs: Set<string> }>();
+  for (const [slug, entries] of Object.entries(projects)) {
+    for (const raw of entries) {
+      const text = raw.trim();
+      if (!text) continue;
+      const key = normalizeKey(text);
+      const rec = byKey.get(key);
+      if (rec) rec.slugs.add(slug);
+      else byKey.set(key, { text, slugs: new Set([slug]) });
+    }
+  }
+  return [...byKey.values()]
+    .filter((rec) => rec.slugs.size >= threshold)
+    // Deterministic order: most-spread first, then text.
+    .sort((a, b) => b.slugs.size - a.slugs.size || a.text.localeCompare(b.text))
+    .map((rec) => ({ text: rec.text, slugs: [...rec.slugs].sort() }));
+}
+
+// Scan wiki/projects/*/core.md (readdir = real fs; core reads go through the
+// obsidian CLI like every other vault read), promote cross-project entries
+// into wiki/global-core.md with provenance, overwrite via the CLI. Returns
+// the number of entries newly promoted. Idempotent: entries already present
+// in the global core with a provenance set covering their source projects
+// are skipped (no duplicate bullets, no score inflation on re-runs).
+// Best-effort: missing projects dir, read failures, or unparseable cores
+// yield { promoted: 0 } and never fail the agent loop. Exported for the
+// smoke test (pi only invokes the default export).
+export function sweepPromoteGlobal(
+  vaultPath: string,
+  promotionThreshold: number,
+  maxGlobalItems: number = PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+): { promoted: number } {
+  try {
+    const projectsRoot = join(vaultPath, "wiki", "projects");
+    const projects: Record<string, string[]> = {};
+    for (const entry of readdirSync(projectsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue; // stray files (scratch.txt) never count
+      const read = execObsidianReadSafe(vaultPath, projectCoreRel(entry.name));
+      if (!read.ok) continue;
+      const core = parseCoreFile(read.content);
+      if (core.learnings.length > 0) projects[entry.name] = core.learnings.map((e) => e.text);
+    }
+    const candidates = collectCrossProjectEntries(projects, promotionThreshold);
+    if (candidates.length === 0) return { promoted: 0 };
+
+    const relPath = "wiki/global-core.md";
+    const existing = execObsidianReadSafe(vaultPath, relPath);
+    if (!existing.ok) return { promoted: 0 };
+    const core = existing.content ? parseCoreFile(existing.content) : { learnings: [], watchouts: [] };
+    // Skip entries whose source projects are already fully covered by the
+    // existing provenance — a re-run then leaves the store byte-identical
+    // instead of inflating scores.
+    const byKey = new Map(core.learnings.map((e) => [normalizeKey(e.text), e]));
+    const incoming: Array<{ text: string; from: string[] }> = [];
+    for (const cand of candidates) {
+      const existingEntry = byKey.get(normalizeKey(cand.text));
+      if (existingEntry?.from && cand.slugs.every((s) => existingEntry.from?.includes(s))) continue;
+      incoming.push({ text: cand.text, from: cand.slugs });
+    }
+    if (incoming.length === 0) return { promoted: 0 };
+
+    const merged = mergeEntries(core.learnings, incoming, maxGlobalItems);
+    const rendered = renderGlobalCore(extractCreatedDate(existing.content) ?? new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10), merged, DEFAULT_PAGE_CANDIDACY.threshold);
+    const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
+    execSync(
+      `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
+      { cwd: vaultPath, encoding: "utf-8", timeout: 10000 },
+    );
+    return { promoted: incoming.length };
+  } catch {
+    return { promoted: 0 };
+  }
+}
+
+// ─── Digest builder ──────────────────────────────────────────────────────────
+// Token-lean session-start context (design §9.4): top project + global
+// learnings by score, truncated at bullet boundaries to digestBudgetChars.
+// Read-only — never writes the vault. Returns null when both cores are
+// empty/missing (nothing to inject) so callers skip injection entirely.
+//
+// Read failures are tolerated per-side (a transient CLI failure skips that
+// side, not the whole digest) — the digest is read-only so there is no
+// clobber risk, unlike updateGlobalCore's write pipeline.
+// Exported for the smoke test (pi only invokes the default export).
+export function buildDigest(vaultPath: string, slug: string, config: AgentsMemoConfig): string | null {
+  const injection = config.memoryInjection ?? DEFAULT_MEMORY_INJECTION;
+  const threshold = config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold;
+
+  const projRead = execObsidianReadSafe(vaultPath, projectCoreRel(slug));
+  const globalRead = execObsidianReadSafe(vaultPath, "wiki/global-core.md");
+  const projCore = projRead.ok ? parseCoreFile(projRead.content) : { learnings: [], watchouts: [] };
+  const globalCore = globalRead.ok ? parseCoreFile(globalRead.content) : { learnings: [], watchouts: [] };
+  // Stable score-desc sort before slicing: cores are stored score-sorted, but
+  // hand-edited files must still yield the top entries deterministically.
+  const byScore = (entries: CoreEntry[]): CoreEntry[] => [...entries].sort((a, b) => b.score - a.score);
+  const projTop = byScore(projCore.learnings).slice(0, injection.projectCoreTop);
+  const globalTop = byScore(globalCore.learnings).slice(0, injection.globalCoreTop);
+  if (projTop.length === 0 && globalTop.length === 0) return null;
+
+  // Page-candidacy nudge counts every global learning at/above the threshold
+  // (the store's stable-truth pool, not just the bullets shown in the digest).
+  const candidates = globalCore.learnings.filter((e) => e.score >= threshold).length;
+  const header = `[agents-memo memory]\n## Project learnings (${slug})\n## Global learnings`;
+  const pointer = `\n\nPage candidates: ${candidates} (score >= ${threshold}) — promote via /save or ask the agent\nFull memory on demand: /query or obsidian search.`;
+  const bullets = [...projTop.map((e) => `- ${e.text}`), ...globalTop.map((e) => `- ${e.text}`)];
+
+  // Truncate to digestBudgetChars at bullet boundaries: drop lowest-ranked
+  // (last) bullets while over budget. If even the header + pointer exceed the
+  // budget, all bullets go but the pointer line is kept.
+  const body = (bs: string[]) => (bs.length > 0 ? `${header}\n${bs.join("\n")}` : header);
+  if (body(bullets).length + pointer.length <= injection.digestBudgetChars) {
+    return body(bullets) + pointer;
+  }
+  while (bullets.length > 0) {
+    bullets.pop();
+    if (body(bullets).length + pointer.length <= injection.digestBudgetChars) break;
+  }
+  return body(bullets) + pointer;
 }
 
 function appendDailyReflection(vaultPath: string, label: string): void {
@@ -894,21 +1289,31 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // ── AC-PM: inject wiki/projects/<slug>/core.md when projectMemory is on ────
+  // ── AC-PM: inject the memory digest (project + global cores) ───────────────
+  // Token-lean replacement for phase-1's full project-core injection: top-N
+  // learnings from both cores, truncated to digestBudgetChars (design §9.4).
+  // The slug is cached so session_compact re-injects the same project's
+  // digest even if process.cwd() changed mid-session (memory: never guess
+  // the slug in session_compact).
   pi.on("before_agent_start", (_event, ctx): BeforeAgentStartEventResult | void => {
     if (!isSessionBootstrap()) return;
     const config = readPiSettings();
     if (config.projectMemory?.enabled === false) return;
     const vaultPath = getVaultPath();
     if (!vaultPath) return;
+    // Slug cached BEFORE the sessionStart flag check: session_compact
+    // re-injects whenever reInjectOnCompact alone is on, independent of
+    // whether the session-start digest was injected (memory: never guess the
+    // slug in session_compact — process.cwd() may have changed by then).
     const slug = getProjectSlug(ctx.cwd);
     lastProjectSlug = slug;
-    const core = execObsidianRead(vaultPath, projectCoreRel(slug));
-    if (!core) return;
+    if (config.memoryInjection?.sessionStart === false) return;
+    const digest = buildDigest(vaultPath, slug, config);
+    if (!digest) return;
     return {
       message: {
-        customType: "agents-memo-project-core",
-        content: `[agents-memo: project memory for ${slug}]\n${core}`,
+        customType: "agents-memo-memory-digest",
+        content: digest,
         display: false,
       },
     };
@@ -939,15 +1344,16 @@ export default function (pi: ExtensionAPI) {
         );
       }
     }
-    // Project core re-injection uses the slug cached at before_agent_start,
-    // never process.cwd() (which may have changed by compaction time).
-    if (config.projectMemory?.enabled !== false && lastProjectSlug) {
-      const core = execObsidianRead(vaultPath, projectCoreRel(lastProjectSlug));
-      if (core) {
+    // Digest re-injection uses the slug cached at before_agent_start, never
+    // process.cwd() (which may have changed by compaction time), and only
+    // when the session actually resolved a vault + slug.
+    if (config.memoryInjection?.reInjectOnCompact !== false && config.projectMemory?.enabled !== false && lastProjectSlug) {
+      const digest = buildDigest(vaultPath, lastProjectSlug, config);
+      if (digest) {
         pi.sendMessage(
           {
-            customType: "agents-memo-project-core",
-            content: `[agents-memo: project memory for ${lastProjectSlug}]\n${core}`,
+            customType: "agents-memo-memory-digest",
+            content: digest,
             display: false,
           },
           { triggerTurn: false },
@@ -1044,14 +1450,19 @@ export default function (pi: ExtensionAPI) {
     const touched = vaultTouched;
     vaultTouched = false;
     const vaultPath = getVaultPath();
-    if (!vaultPath || !touched) return;
+    if (!vaultPath) return;
     const config = readPiSettings();
     if (config.projectMemory?.enabled === false) {
       // Legacy path: static global daily marker (sessions that opted out of
-      // per-project pages keep the old behavior unchanged).
-      appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
+      // per-project pages keep the old behavior unchanged). Stays
+      // touched-gated — untouched runs never write the legacy marker.
+      if (touched) appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
       return;
     }
+    // Untouched runs reflect only when reflectUntouchedRuns is on (default
+    // true): reflection is cheap and sessions that never wrote the vault can
+    // still produce learnings worth distilling.
+    if (!touched && !config.projectMemory?.reflectUntouchedRuns) return;
 
     const slug = getProjectSlug(ctx.cwd);
     const now = new Date();
@@ -1063,6 +1474,51 @@ export default function (pi: ExtensionAPI) {
     if (!reflection) return;
     appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
     updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);
+    // Global bucket: cross-project learnings land in wiki/global-core.md
+    // (skipped when the global store is disabled; empty-bucket reflections
+    // are a no-op merge over whatever the store already holds).
+    if (config.projectMemory?.globalEnabled !== false) {
+      updateGlobalCore(
+        vaultPath,
+        dateStr,
+        reflection,
+        config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+        config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
+      );
+    }
+  });
+
+  // ── AC-PM: promotion sweep command (/wiki promote-global) ─────────────────
+  // Deterministic cross-project promotion (§9.6): entries present in
+  // >= promotionThreshold project cores move into wiki/global-core.md with a
+  // provenance marker. On-demand counterpart of the session_shutdown trigger.
+  pi.registerCommand("wiki promote-global", {
+    description: "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
+    handler: async (_args, ctx) => {
+      const vaultPath = getVaultPath();
+      const config = readPiSettings();
+      if (!vaultPath) {
+        if (ctx.hasUI) ctx.ui.notify("agents-memo: no vault resolved — cannot sweep", "error");
+        return;
+      }
+      if (config.projectMemory?.globalEnabled === false) {
+        if (ctx.hasUI) ctx.ui.notify("agents-memo: global memory is disabled (projectMemory.globalEnabled=false)", "error");
+        return;
+      }
+      const result = sweepPromoteGlobal(
+        vaultPath,
+        config.projectMemory?.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
+        config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+      );
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          result.promoted > 0
+            ? `agents-memo: promoted ${result.promoted} cross-project learning(s) into wiki/global-core.md`
+            : "agents-memo: nothing to promote (no entry appears in enough project cores)",
+          "info",
+        );
+      }
+    },
   });
 
   // ── AC17: session_shutdown - end-of-session summary reflection ─────────────
@@ -1070,6 +1526,18 @@ export default function (pi: ExtensionAPI) {
     const vaultPath = getVaultPath(); // for this session's reflection
     bootstrapServed = false; // next session in this process re-injects
     lastProjectSlug = undefined; // stale slug must not leak into the next session
+    // Promotion sweep (§9.6): cross-project repeats land in the global core
+    // at session end (gated on global memory being enabled). The vaultPath
+    // read above guards reload churn — without a vault resolved this session
+    // nothing is swept, and an empty store keeps the sweep a no-op.
+    const config = readPiSettings();
+    if (vaultPath && config.projectMemory?.globalEnabled !== false) {
+      sweepPromoteGlobal(
+        vaultPath,
+        config.projectMemory?.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
+        config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+      );
+    }
     // Consume the session flags so a shutdown landing mid-run never leaks
     // touches into the next session's first agent_end reflection.
     const touched = sessionTouched;

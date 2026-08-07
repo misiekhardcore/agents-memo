@@ -15,8 +15,9 @@
 //   AC16-17 agent_end / session_shutdown reflection (write-verb touched tracking)
 //   PM      per-project memory: slug derivation, reflection subprocess,
 //           project daily + core.md pipeline, legacy fallback, core.md
-//           parse/merge/render pure functions, before_agent_start + compact
-//           injection of project core.md
+//           parse/merge/render pure functions, digest injection at
+//           before_agent_start + compact, reflectUntouchedRuns gate,
+//           global core read-failure guard
 //   AC18-21 memo_dispatch discovery, frontmatter conversion, single/parallel/chain, registration
 
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
@@ -57,11 +58,16 @@ const execFakes = {
   hot: "hot cache injected\n",
   index: "# wiki index injected\n",
 };
-// Stateful simulation of the wiki/projects/<slug>/ subtree (project memory):
-// reads return what prior overwrites stored, so core.md merge/dedup/score can
-// be asserted end-to-end without Obsidian. Content is shell-decoded the same
-// way the real obsidian CLI round-trips literal \n → newline.
+// Stateful simulation of the wiki/projects/<slug>/ subtree + wiki/global-core.md
+// (project + global memory): reads return what prior overwrites stored, so
+// core merge/dedup/score can be asserted end-to-end without Obsidian. Content
+// is shell-decoded the same way the real obsidian CLI round-trips literal \n
+// → newline.
 const projectFiles = new Map();
+// Simulated obsidian read failures keyed by vault-relative path (value = the
+// error's stdout). Lets the smoke test drive the missing-file classification
+// ("Error: File ... not found.") and the read-failure guard without Obsidian.
+const failReads = new Map();
 // Queue of canned `git remote get-url origin` outputs (slug derivation). The
 // extension's execSync binding is captured at import time, so the mock reads
 // from this mutable state instead of being reassigned per test.
@@ -73,12 +79,19 @@ cp.execSync = (cmd) => {
   if (c.includes("git remote get-url origin")) return gitUrlQueue.shift() ?? "";
   if (c.includes('path=wiki/hot.md')) return execFakes.hot;
   if (c.includes('path=wiki/index.md')) return execFakes.index;
-  const projRead = c.match(/read "?path=(wiki\/projects\/[^\s"]+)/);
-  if (projRead) return projectFiles.get(projRead[1]) ?? "";
-  const projCreate = c.match(/create path=(wiki\/projects\/[^\s"]+) overwrite=true content="((?:[^"\\]|\\.)*)"/);
-  if (projCreate) {
-    projectFiles.set(projCreate[1], decodeShell(projCreate[2]));
-    return `Created: ${projCreate[1]}\n`;
+  const coreRead = c.match(/read "?path=(wiki\/(?:projects\/[^\s"]+|global-core\.md))/);
+  if (coreRead) {
+    if (failReads.has(coreRead[1])) {
+      const err = new Error(`mock read failure: ${coreRead[1]}`);
+      err.stdout = failReads.get(coreRead[1]);
+      throw err;
+    }
+    return projectFiles.get(coreRead[1]) ?? "";
+  }
+  const coreCreate = c.match(/create path=(wiki\/(?:projects\/[^\s"]+|global-core\.md)) overwrite=true content="((?:[^"\\]|\\.)*)"/);
+  if (coreCreate) {
+    projectFiles.set(coreCreate[1], decodeShell(coreCreate[2]));
+    return `Created: ${coreCreate[1]}\n`;
   }
   if (c.includes("create-or-append")) return "";
   return "";
@@ -138,6 +151,7 @@ function section(name) { console.log(`\n=== ${name} ===`); }
 function createMockPi() {
   const handlers = {};
   const tools = [];
+  const commands = [];
   const sent = [];
   const execs = [];
   let gitDirty = false;
@@ -145,6 +159,7 @@ function createMockPi() {
   const pi = {
     on(event, fn) { (handlers[event] ??= []).push(fn); },
     registerTool(tool) { tools.push(tool); },
+    registerCommand(name, opts) { commands.push({ name, opts }); },
     sendMessage(msg, opts) { sent.push({ msg, opts }); },
     exec(cmd, args) {
       execs.push([cmd, ...args]);
@@ -156,7 +171,7 @@ function createMockPi() {
   };
   const ctx = { hasUI: true, cwd: REPO, ui: { notify: () => { notifyCount++; } } };
   return {
-    pi, handlers, tools, sent, execs,
+    pi, handlers, tools, commands, sent, execs,
     setGitDirty: (d) => { gitDirty = d; },
     notifyCount: () => notifyCount,
     ctx,
@@ -275,6 +290,20 @@ const settled = () => Promise.all(mock.handlers["agent_settled"].map((h) => h({}
 
 section("AC16/17 — write-verb touched tracking");
 {
+  // Pin reflectUntouchedRuns=false for this section: these assertions verify
+  // write-verb detection (untouched → no reflection). The untouched-run
+  // reflection behavior is covered by its own PM2 section.
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+    agentsMemo: {
+      vaultPath: VAULT,
+      bootstrapReadHot: "always",
+      bootstrapReadIndex: "on-demand",
+      autoCommit: true,
+      projectMemory: { reflectUntouchedRuns: false },
+    },
+  }));
+  try {
   // Consume the per-run flag via agent_end (it resets the flag now, not
   // agent_settled) so this section starts from a clean slate.
   mock.setGitDirty(false);
@@ -319,6 +348,9 @@ section("AC16/17 — write-verb touched tracking");
   mock.handlers["tool_call"][0](trailEv, mock.ctx);
   mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
   assert(appends().length === before + 5, "trailing wrapper backtracks to prior verb → reflection appended");
+  } finally {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+  }
 }
 
 section("AC8-10 — before_agent_start injection");
@@ -335,13 +367,16 @@ section("AC8-10 — before_agent_start injection");
   assert(types.includes("agents-memo-hot"), "hot.md injected when bootstrapReadHot=always");
   assert(results.find((r) => r.message.customType === "agents-memo-hot")?.message.content.includes("hot cache injected"), "hot.md content via obsidian-cli");
   assert(!types.includes("agents-memo-index"), "index.md NOT injected when bootstrapReadIndex=on-demand");
-  // AC-PM: project core.md injected when projectMemory enabled (default true),
-  // sourced from wiki/projects/<slug>/core.md via the obsidian CLI.
-  const coreMsg = results.find((r) => r.message.customType === "agents-memo-project-core")?.message;
-  assert(!!coreMsg, "project core.md injected when projectMemory enabled (default)");
-  assert(coreMsg?.display === false, "project core message display:false");
-  assert(coreMsg?.content.includes("project memory for "), "project core injected with slug prefix");
-  assert(coreMsg?.content.includes("Keep edits small"), "project core content from vault core.md");
+  // AC-PM: the memory digest is injected when projectMemory is enabled
+  // (default), sourced from the project + global cores via the obsidian CLI.
+  const digestMsg = results.find((r) => r.message.customType === "agents-memo-memory-digest")?.message;
+  assert(!!digestMsg, "memory digest injected when projectMemory enabled (default)");
+  assert(digestMsg?.display === false, "digest message display:false");
+  assert(digestMsg?.content.startsWith("[agents-memo memory]"), "digest starts with the memory header");
+  assert(digestMsg?.content.includes(`## Project learnings (${REPO_SLUG})`), "digest has project learnings section with slug");
+  assert(digestMsg?.content.includes("- Keep edits small"), "digest carries top project learning from vault core.md");
+  assert(digestMsg?.content.includes("Page candidates: 0"), "digest reports candidate count (no global core yet)");
+  assert(!results.some((r) => r.message.customType === "agents-memo-project-core"), "phase-1 project-core customType replaced");
 }
 
 section("AC11 — session_compact re-injection");
@@ -351,11 +386,12 @@ section("AC11 — session_compact re-injection");
   assert(hotSends.length === 1, "hot.md re-injected via sendMessage");
   assert(hotSends[0]?.opts?.triggerTurn === false, "re-injection does not trigger a turn");
   assert(!mock.sent.some((s) => s.msg.customType === "agents-memo-index"), "index.md not re-injected (on-demand)");
-  // AC-PM: project core re-injected from the slug cached at before_agent_start.
-  const coreSends = mock.sent.filter((s) => s.msg.customType === "agents-memo-project-core");
-  assert(coreSends.length === 1, "project core.md re-injected on session_compact");
-  assert(coreSends[0]?.opts?.triggerTurn === false, "project core re-injection does not trigger a turn");
-  assert(coreSends[0]?.msg.content.includes("project memory for "), "project core re-injection has slug prefix");
+  // AC-PM: the digest is re-injected from the slug cached at
+  // before_agent_start (never process.cwd(), which may have changed).
+  const digestSends = mock.sent.filter((s) => s.msg.customType === "agents-memo-memory-digest");
+  assert(digestSends.length === 1, "memory digest re-injected on session_compact");
+  assert(digestSends[0]?.opts?.triggerTurn === false, "digest re-injection does not trigger a turn");
+  assert(digestSends[0]?.msg.content.includes(`## Project learnings (${REPO_SLUG})`), "digest re-injection has project learnings section");
 }
 
 section("AC13 — hot-cache 0-byte guard");
@@ -555,6 +591,543 @@ section("project-memory — enabled=false falls back to legacy daily marker");
   } finally {
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
   }
+}
+
+section("PM2-config — readPiSettings nested-block merge + defaults");
+{
+  const globalSettings = join(HOME, ".pi", "agent", "settings.json");
+  const origGlobal = readFileSync(globalSettings, "utf-8");
+  const projSettingsDir = join(SCRATCH, "cfg-cwd");
+  mkdirSync(join(projSettingsDir, ".pi"), { recursive: true });
+  const projSettings = join(projSettingsDir, ".pi", "settings.json");
+  const cwdBefore = process.cwd();
+
+  // Absent config → phase-2 defaults applied, phase-1 keys unaffected.
+  writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { vaultPath: VAULT } }));
+  writeFileSync(projSettings, JSON.stringify({}));
+  process.chdir(projSettingsDir);
+  try {
+    let cfg = memoMod.readPiSettings();
+    assert(cfg.vaultPath === VAULT, "top-level key resolved alongside new blocks");
+    assert(cfg.projectMemory.enabled === true, "default projectMemory.enabled=true (phase 1 intact)");
+    assert(cfg.projectMemory.globalEnabled === true, "default globalEnabled=true");
+    assert(cfg.projectMemory.maxGlobalItems === 20, "default maxGlobalItems=20");
+    assert(cfg.projectMemory.promotionThreshold === 2, "default promotionThreshold=2");
+    assert(cfg.projectMemory.reflectUntouchedRuns === true, "default reflectUntouchedRuns=true");
+    assert(cfg.memoryInjection.sessionStart === true, "default memoryInjection.sessionStart=true");
+    assert(cfg.memoryInjection.reInjectOnCompact === true, "default memoryInjection.reInjectOnCompact=true");
+    assert(cfg.memoryInjection.digestBudgetChars === 800, "default digestBudgetChars=800");
+    assert(cfg.memoryInjection.projectCoreTop === 5, "default projectCoreTop=5");
+    assert(cfg.memoryInjection.globalCoreTop === 5, "default globalCoreTop=5");
+    assert(cfg.pageCandidacy.threshold === 3, "default pageCandidacy.threshold=3");
+
+    // Per-key first-wins across tiers: the global file wins every key it
+    // defines; the project file only fills keys the global file leaves
+    // undefined.
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { projectMemory: { globalEnabled: false, promotionThreshold: 3 } } }));
+    writeFileSync(projSettings, JSON.stringify({ agentsMemo: { projectMemory: { globalEnabled: true, maxGlobalItems: 7, reflectUntouchedRuns: false } } }));
+    cfg = memoMod.readPiSettings();
+    assert(cfg.projectMemory.globalEnabled === false, "global tier wins globalEnabled");
+    assert(cfg.projectMemory.promotionThreshold === 3, "global tier wins promotionThreshold");
+    assert(cfg.projectMemory.maxGlobalItems === 7, "project tier fills undefined maxGlobalItems");
+    assert(cfg.projectMemory.reflectUntouchedRuns === false, "project tier fills undefined reflectUntouchedRuns");
+    assert(cfg.projectMemory.enabled === true, "unspecified key falls to default");
+
+    // memoryInjection + pageCandidacy: same per-key first-wins + defaults.
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { memoryInjection: { digestBudgetChars: 1200 } } }));
+    writeFileSync(projSettings, JSON.stringify({ agentsMemo: { memoryInjection: { sessionStart: false, digestBudgetChars: 500 }, pageCandidacy: { threshold: 5 } } }));
+    cfg = memoMod.readPiSettings();
+    assert(cfg.memoryInjection.digestBudgetChars === 1200, "global tier wins digestBudgetChars");
+    assert(cfg.memoryInjection.sessionStart === false, "project tier fills sessionStart");
+    assert(cfg.memoryInjection.reInjectOnCompact === true, "unset memoryInjection key → default");
+    assert(cfg.pageCandidacy.threshold === 5, "pageCandidacy merged from project tier");
+
+    // Malformed values are type-gated → defaults, never garbage.
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { projectMemory: { maxGlobalItems: "many" }, pageCandidacy: { threshold: "high" } } }));
+    writeFileSync(projSettings, JSON.stringify({}));
+    cfg = memoMod.readPiSettings();
+    assert(cfg.projectMemory.maxGlobalItems === 20, "malformed maxGlobalItems rejected → default");
+    assert(cfg.pageCandidacy.threshold === 3, "malformed threshold rejected → default");
+
+    // Numeric holes: JSON.parse accepts 1e999 (→ Infinity) and negatives
+    // pass typeof number — counts/budgets must be finite integers >= 0 or
+    // the digest silently degrades (NaN/±Infinity budgets, negative caps).
+    writeFileSync(globalSettings, '{ "agentsMemo": { "memoryInjection": { "digestBudgetChars": 1e999, "projectCoreTop": -3, "globalCoreTop": 2.5 } } }');
+    writeFileSync(projSettings, JSON.stringify({}));
+    cfg = memoMod.readPiSettings();
+    assert(cfg.memoryInjection.digestBudgetChars === 800, "Infinity digestBudgetChars rejected → default");
+    assert(cfg.memoryInjection.projectCoreTop === 5, "negative projectCoreTop rejected → default");
+    assert(cfg.memoryInjection.globalCoreTop === 5, "fractional globalCoreTop rejected too (integer counts only)");
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { projectMemory: { promotionThreshold: -1 }, pageCandidacy: { threshold: 0 } } }));
+    writeFileSync(projSettings, JSON.stringify({}));
+    cfg = memoMod.readPiSettings();
+    assert(cfg.projectMemory.promotionThreshold === 2, "negative promotionThreshold rejected → default");
+    assert(cfg.pageCandidacy.threshold === 0, "threshold 0 is a valid integer (>= 0)");
+  } finally {
+    process.chdir(cwdBefore);
+    writeFileSync(globalSettings, origGlobal);
+  }
+}
+
+section("PM2-reflection — global-bucket prompt + parser");
+{
+  const prompt = memoMod.buildReflectionSystemPrompt(5);
+  assert(prompt.includes('"global"'), "prompt asks for global bucket");
+  assert(prompt.includes("design patterns"), "prompt lists design patterns");
+  assert(prompt.includes("non-trivial bug fixes"), "prompt lists non-trivial bug fixes");
+  assert(prompt.includes("architecture decisions"), "prompt lists architecture decisions");
+  assert(prompt.includes("no project"), "prompt demands generic wording (no project identifiers)");
+  assert(prompt.includes("max 5"), "prompt keeps max-items constraint");
+
+  const p = memoMod.parseReflectionJson;
+  const three = p('{"mistakes":["m"],"fixes":["f"],"global":["g"]}');
+  assert(three?.mistakes.length === 1 && three?.fixes.length === 1 && three?.global?.length === 1, "parser extracts all three buckets");
+  const globalOnly = p('{"global":["reusable pattern"]}');
+  assert(!!globalOnly && globalOnly.mistakes.length === 0 && globalOnly.fixes.length === 0 && globalOnly.global?.[0] === "reusable pattern", "global-only response valid");
+  assert(p('{"mistakes":["m"]}') !== null, "mistakes-only response still valid");
+  assert(p('{"fixes":["f"]}') !== null, "fixes-only response still valid");
+  assert(p('{"mistakes":[],"fixes":[],"global":[]}') === null, "all-empty buckets → invalid");
+  assert(p("not json") === null, "garbage → null");
+  const fenced = p('```json\n{"global":["g"],"mistakes":["m"],"fixes":["f"]}\n```');
+  assert(fenced?.global?.[0] === "g", "fenced JSON with global bucket parses");
+  const mixed = p('{"global":["g", 42, null]}');
+  assert(mixed?.global?.length === 1 && mixed.global[0] === "g", "non-string global entries filtered");
+}
+
+section("PM2-globalcore — global-core render/merge/update engine");
+{
+  const { parseCoreFile, renderGlobalCore, updateGlobalCore } = memoMod;
+
+  // Round-trip: rendered global core parses back to the same entries; score
+  // and candidate markers are render-side concerns, never part of the text.
+  const learnings = [
+    { text: "Prefer small, reviewable diffs", score: 3 },
+    { text: "Trace config keys to call sites before claiming dead", score: 1 },
+  ];
+  const rendered = renderGlobalCore("2026-08-01", "2026-08-07", learnings, 3);
+  assert(rendered.startsWith("---\ntype: global-core"), "render: global-core frontmatter");
+  assert(rendered.includes("created: 2026-08-01"), "render: created date passed through");
+  assert(rendered.includes("updated: 2026-08-07"), "render: updated date passed through");
+  assert(rendered.includes("# Global Learnings"), "render: H1 Global Learnings");
+  assert(rendered.includes("## High-value learnings"), "render: single learnings section");
+  assert(!rendered.includes("## Watch-outs"), "render: no watch-outs section in global core");
+  assert(rendered.includes("Prefer small, reviewable diffs<!--score:3--><!--candidate-->"), "render: candidate marker when score >= threshold");
+  const traceLine = rendered.split("\n").find((l) => l.includes("Trace config"));
+  assert(!!traceLine && !traceLine.includes("<!--candidate-->"), "render: no candidate marker below threshold");
+
+  const reparsed = parseCoreFile(rendered);
+  assert(reparsed.learnings.length === 2, "round-trip: entry count preserved");
+  assert(reparsed.learnings[0].text === "Prefer small, reviewable diffs" && reparsed.learnings[0].score === 3, "round-trip: text + score preserved");
+  assert(reparsed.learnings[1].text === "Trace config keys to call sites before claiming dead" && reparsed.learnings[1].score === 1, "round-trip: second entry preserved");
+  assert(reparsed.watchouts.length === 0, "round-trip: no watchouts from global core");
+  assert(!reparsed.learnings.some((e) => e.text.includes("<!--")), "round-trip: score + candidate markers stripped from text");
+
+  // updateGlobalCore end-to-end: seed a promoted pointer bullet, then merge a
+  // raw reflection item that duplicates it modulo the [[wikilink]] and case /
+  // whitespace variance - score must increment through the link.
+  projectFiles.set("wiki/global-core.md", [
+    "---",
+    "type: global-core",
+    "created: 2026-08-01",
+    "updated: 2026-08-01",
+    "---",
+    "",
+    "# Global Learnings",
+    "",
+    "## High-value learnings",
+    "- Prefer small, reviewable diffs [[review-process]]<!--score:2-->",
+    "",
+  ].join("\n"));
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["Prefer   small, reviewable diffs"] }, 5, 3);
+  const mergedCore = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(mergedCore.includes("- Prefer small, reviewable diffs [[review-process]]<!--score:3--><!--candidate-->"), "update: wikilink bullet dedups against raw text (score 2→3), pointer kept, candidate rendered");
+  assert(mergedCore.includes("[[review-process]]"), "update: wikilink pointer preserved in rendered bullet");
+  assert(mergedCore.includes("<!--candidate-->"), "update: score 3 at threshold renders candidate marker");
+  const mergedParsed = parseCoreFile(mergedCore);
+  assert(mergedParsed.learnings.length === 1 && mergedParsed.learnings[0].score === 3, "update: normalizeKey strips the wikilink for dedup (single entry, score 3)");
+
+  // Cap: maxGlobalItems drops the lowest-scored entries, keeps the top.
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["a", "b", "c", "d"] }, 2, 3);
+  const cappedParsed = parseCoreFile(projectFiles.get("wiki/global-core.md") ?? "");
+  assert(cappedParsed.learnings.length === 2, "update: capped at maxGlobalItems");
+  assert(cappedParsed.learnings[0].text === "Prefer small, reviewable diffs [[review-process]]" && cappedParsed.learnings[0].score === 3, "update: cap keeps highest-scored entry first");
+  assert(cappedParsed.learnings[1].score === 1, "update: cap drops lowest scores (stable order)");
+
+  // Fresh start: missing file = empty core; only the global bucket lands in
+  // wiki/global-core.md (mistakes/fixes stay in the project core).
+  projectFiles.delete("wiki/global-core.md");
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: ["m"], fixes: ["f"], global: ["Reusable pattern"] }, 20, 3);
+  const freshCore = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(freshCore.includes("- Reusable pattern<!--score:1-->"), "update: missing file starts from empty core");
+  assert(!freshCore.includes("- m") && !freshCore.includes("- f"), "update: only the global bucket lands in global core");
+  assert(!freshCore.includes("<!--candidate-->"), "update: score 1 below threshold renders no candidate marker");
+
+  // Empty global bucket (reflection without global items): merge is a no-op
+  // over the existing entries.
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: ["m"], fixes: ["f"], global: [] }, 20, 3);
+  const noopCore = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(noopCore.includes("- Reusable pattern<!--score:1-->") && !noopCore.includes("- m"), "update: empty global bucket leaves entries untouched");
+  projectFiles.delete("wiki/global-core.md");
+
+  // Created-date preservation (regression): a merge must keep the ORIGINAL
+  // created date from the existing file and only refresh updated — stamping
+  // today's date over created loses the store's birth record.
+  projectFiles.set("wiki/global-core.md", [
+    "---",
+    "type: global-core",
+    "created: 2026-08-01",
+    "updated: 2026-08-01",
+    "---",
+    "",
+    "# Global Learnings",
+    "",
+    "## High-value learnings",
+    "- Old entry<!--score:2-->",
+    "",
+  ].join("\n"));
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["New entry"] }, 20, 3);
+  const dated = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(dated.includes("created: 2026-08-01"), "update: merge keeps the original created date");
+  assert(dated.includes("updated: 2026-08-07"), "update: merge refreshes only the updated date");
+  assert(dated.includes("- New entry<!--score:1-->"), "update: created-date handling leaves content untouched");
+  // Fresh start (missing file): created = today.
+  projectFiles.delete("wiki/global-core.md");
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["Brand new"] }, 20, 3);
+  const freshDated = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(freshDated.includes("created: 2026-08-07") && freshDated.includes("updated: 2026-08-07"), "update: missing file → created = today");
+  projectFiles.delete("wiki/global-core.md");
+}
+
+section("PM2 — shell-metacharacter escaping (regression)");
+{
+  // Reflection-generated text flows through escapeShellContent into a
+  // double-quoted shell argument. $ and backticks are live in double-quoted
+  // bash args (command substitution) — a bullet like "use $(echo PWNED)"
+  // must reach the vault as literal text, not execute (verified: unescaped
+  // $(echo PWNED) executes — the shared helper is the single fix point).
+  const { updateGlobalCore } = memoMod;
+  projectFiles.delete("wiki/global-core.md");
+  const before = calls.exec.length;
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["use $(echo PWNED) and `whoami`"] }, 5, 3);
+  const cmd = calls.exec.slice(before).find((c) => c.includes("wiki/global-core.md") && c.includes("overwrite=true")) ?? "";
+  assert(cmd.includes("\\$(echo PWNED)"), "$ escaped in the shell argument");
+  assert(!/(^|[^\\])\$\(/.test(cmd), "no unescaped $() command substitution reaches the shell");
+  assert(cmd.includes("\\`whoami\\`"), "backtick escaped in the shell argument");
+  assert(!/(^|[^\\])`/.test(cmd), "no unescaped backtick substitution reaches the shell");
+  projectFiles.delete("wiki/global-core.md");
+}
+
+section("PM2-globalcore — read-failure guard (no clobber)");
+{
+  const { updateGlobalCore, execObsidianReadSafe } = memoMod;
+  projectFiles.delete("wiki/global-core.md");
+
+  // Missing file → ok with empty content (cold-start condition).
+  const missing = execObsidianReadSafe(VAULT, "wiki/global-core.md");
+  assert(missing.ok === true && missing.content === "", "missing file → ok:true with empty content");
+
+  // The wrapper's "File ... not found" stdout shape classifies as missing,
+  // not as a read failure.
+  failReads.set("wiki/global-core.md", 'Error: File "wiki/global-core.md" not found.');
+  const notFound = execObsidianReadSafe(VAULT, "wiki/global-core.md");
+  assert(notFound.ok === true && notFound.content === "", "CLI 'File not found' error → ok:true with empty content");
+  failReads.delete("wiki/global-core.md");
+
+  // Generic read failure → not-ok; updateGlobalCore must skip the write so a
+  // transient CLI failure cannot clobber the accumulated corpus.
+  failReads.set("wiki/global-core.md", "Error: something broke");
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["should not land"] }, 20, 3);
+  assert(projectFiles.get("wiki/global-core.md") === undefined, "read failure → global core NOT written (no clobber)");
+  failReads.delete("wiki/global-core.md");
+
+  // Failure cleared → a still-missing file proceeds with an empty core.
+  updateGlobalCore(VAULT, "2026-08-07", { mistakes: [], fixes: [], global: ["Fresh start"] }, 20, 3);
+  const fresh = projectFiles.get("wiki/global-core.md") ?? "";
+  assert(fresh.includes("- Fresh start<!--score:1-->"), "missing file → update proceeds with empty core");
+  projectFiles.delete("wiki/global-core.md");
+
+  // updateProjectCore gets the same guard: a transient read failure must not
+  // clobber the accumulated project corpus either (missing file still
+  // proceeds from an empty core — phase-1 happy path parity).
+  const { updateProjectCore } = memoMod;
+  const projRel = `wiki/projects/${REPO_SLUG}/core.md`;
+  const projSeed = [
+    "---", "type: project-core", `project: ${REPO_SLUG}`, "created: 2026-08-06", "updated: 2026-08-06", "---", "",
+    "## High-value learnings",
+    "- Keep edits small<!--score:2-->",
+    "",
+  ].join("\n");
+  projectFiles.set(projRel, projSeed);
+  failReads.set(projRel, "Error: something broke");
+  updateProjectCore(VAULT, REPO_SLUG, "2026-08-07", { mistakes: [], fixes: ["should not land"], global: [] }, 20);
+  assert(projectFiles.get(projRel) === projSeed, "project read failure → project core NOT written (no clobber)");
+  failReads.delete(projRel);
+  projectFiles.delete(projRel);
+  updateProjectCore(VAULT, REPO_SLUG, "2026-08-07", { mistakes: [], fixes: ["Fresh fix"], global: [] }, 20);
+  const freshProj = projectFiles.get(projRel) ?? "";
+  assert(freshProj.includes("- Fresh fix<!--score:1-->"), "missing project core → update proceeds with empty core");
+  projectFiles.delete(projRel);
+}
+
+section("PM2-digest — buildDigest (top-N, budget, candidates)");
+{
+  const { buildDigest } = memoMod;
+  const cfg = memoMod.readPiSettings(); // defaults: tops 5, budget 800, threshold 3
+  const seedProject = [
+    "---", "type: project-core", `project: ${REPO_SLUG}`, "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+    `# Project Learnings — ${REPO_SLUG}`, "",
+    "## High-value learnings",
+    "- Keep edits small<!--score:4-->",
+    "- Verify before claiming<!--score:2-->",
+    "- Trace config keys<!--score:1-->",
+    "",
+    "## Watch-outs",
+    "- Avoid: guess without verifying<!--score:1-->",
+    "",
+  ].join("\n");
+  const seedGlobal = [
+    "---", "type: global-core", "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+    "# Global Learnings", "",
+    "## High-value learnings",
+    "- Prefer small diffs<!--score:5-->",
+    "- Reusable pattern<!--score:3-->",
+    "- Low score item<!--score:1-->",
+    "",
+  ].join("\n");
+  projectFiles.set(`wiki/projects/${REPO_SLUG}/core.md`, seedProject);
+  projectFiles.set("wiki/global-core.md", seedGlobal);
+
+  const digest = buildDigest(VAULT, REPO_SLUG, cfg);
+  assert(!!digest, "digest built when both cores have content");
+  assert(digest.startsWith(`[agents-memo memory]\n## Project learnings (${REPO_SLUG})`), "digest header + project section with slug");
+  assert(digest.includes("## Global learnings"), "digest has global section");
+  assert(digest.includes("- Keep edits small"), "digest includes top project learning");
+  assert(digest.includes("- Prefer small diffs"), "digest includes top global learning");
+  assert(!digest.includes("Avoid: guess"), "watch-outs never appear in the digest");
+  assert(digest.includes("Full memory on demand: /query or obsidian search."), "pointer line present");
+
+  // Top-N caps apply by score (stable): smaller tops drop the lowest bullets.
+  const smallCfg = { ...cfg, memoryInjection: { ...cfg.memoryInjection, projectCoreTop: 2, globalCoreTop: 1 } };
+  const small = buildDigest(VAULT, REPO_SLUG, smallCfg);
+  assert(small.includes("- Keep edits small") && small.includes("- Verify before claiming") && !small.includes("- Trace config keys"), "projectCoreTop caps project bullets by score");
+  assert(small.includes("- Prefer small diffs") && !small.includes("- Reusable pattern"), "globalCoreTop caps global bullets by score");
+  // Candidate count reflects the whole store, not the truncated digest view:
+  // scores 5 and 3 are at/above threshold 3 even though only 1 global bullet
+  // is shown with globalCoreTop=1.
+  assert(small.includes("Page candidates: 2"), "candidate count = all global learnings at/above threshold");
+
+  // Budget truncation at bullet boundaries: fits the top bullet only.
+  const pointer = digest.slice(digest.indexOf("\n\nPage candidates:"));
+  const header = `[agents-memo memory]\n## Project learnings (${REPO_SLUG})\n## Global learnings`;
+  const budgetOne = header.length + "- Keep edits small".length + pointer.length + 1;
+  const one = buildDigest(VAULT, REPO_SLUG, { ...cfg, memoryInjection: { ...cfg.memoryInjection, digestBudgetChars: budgetOne } });
+  assert(!!one && one.length <= budgetOne, "truncated digest respects budget");
+  assert(one.includes("- Keep edits small"), "budget fits the top project bullet");
+  assert(!one.includes("- Verify before claiming"), "second bullet dropped at boundary (no partial bullets)");
+  assert(one.includes("Full memory on demand"), "pointer kept after truncation");
+
+  // Budget below the fixed header + pointer → all bullets dropped, pointer kept.
+  const noBullets = buildDigest(VAULT, REPO_SLUG, { ...cfg, memoryInjection: { ...cfg.memoryInjection, digestBudgetChars: 1 } });
+  assert(!!noBullets && !noBullets.includes("- Keep edits small"), "budget below headers → all bullets dropped");
+  assert(noBullets.includes("[agents-memo memory]"), "header kept even when over budget");
+  assert(noBullets.includes("Full memory on demand: /query or obsidian search."), "pointer line kept even when over budget");
+
+  // Empty/missing cores → null (no injection at all).
+  projectFiles.delete("wiki/global-core.md");
+  projectFiles.delete(`wiki/projects/${REPO_SLUG}/core.md`);
+  assert(buildDigest(VAULT, REPO_SLUG, cfg) === null, "both cores missing → null");
+  projectFiles.set(`wiki/projects/${REPO_SLUG}/core.md`, "# Project Learnings\n\n## High-value learnings\n- (none yet)\n");
+  projectFiles.set("wiki/global-core.md", "# Global Learnings\n\n## High-value learnings\n- (none yet)\n");
+  assert(buildDigest(VAULT, REPO_SLUG, cfg) === null, "both cores empty → null");
+
+  // Read failures are tolerated per-side (digest is read-only): a failing
+  // global read still yields the project side; both failing → null.
+  projectFiles.set(`wiki/projects/${REPO_SLUG}/core.md`, seedProject);
+  projectFiles.set("wiki/global-core.md", seedGlobal);
+  failReads.set("wiki/global-core.md", "Error: CLI exploded");
+  const oneSided = buildDigest(VAULT, REPO_SLUG, cfg);
+  assert(!!oneSided && oneSided.includes("- Keep edits small") && !oneSided.includes("- Prefer small diffs"), "global read failure → project side still injected");
+  failReads.set(`wiki/projects/${REPO_SLUG}/core.md`, "Error: CLI exploded");
+  assert(buildDigest(VAULT, REPO_SLUG, cfg) === null, "both reads failed → null");
+  failReads.clear();
+  projectFiles.delete("wiki/global-core.md");
+}
+
+section("PM2-agent_end — reflectUntouchedRuns gate + global write");
+{
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  // Consume any residual touched flag (messages empty → no reflection).
+  mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx));
+  try {
+    // Default (reflectUntouchedRuns=true): an untouched run still reflects —
+    // daily entry + project core + global core all written (empty-bucket
+    // no-ops where there is nothing to merge).
+    projectFiles.delete("wiki/global-core.md");
+    const execBefore = calls.exec.length;
+    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const slice = calls.exec.slice(execBefore);
+    assert(slice.some((c) => c.includes("--no-session")), "untouched run reflects when reflectUntouchedRuns=true (default)");
+    assert(slice.some((c) => c.includes("create-or-append") && c.includes("wiki/projects/")), "untouched run still writes the project daily entry");
+    assert(slice.some((c) => c.includes("create") && c.includes("wiki/global-core.md") && c.includes("overwrite=true")), "untouched run writes global core (empty-bucket no-op)");
+
+    // reflectUntouchedRuns=false → untouched run skips everything.
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: { vaultPath: VAULT, projectMemory: { reflectUntouchedRuns: false } },
+    }));
+    const execBefore2 = calls.exec.length;
+    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const slice2 = calls.exec.slice(execBefore2);
+    assert(slice2.length === 0, "reflectUntouchedRuns=false → untouched run reflects nothing");
+
+    // globalEnabled=false → project pipeline still runs, global write skipped.
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: { vaultPath: VAULT, projectMemory: { globalEnabled: false } },
+    }));
+    const writeEv = { toolCallId: "t-pm2g", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/pm2.md content="x"` } };
+    mock.handlers["tool_call"][0](writeEv, mock.ctx);
+    const execBefore3 = calls.exec.length;
+    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const slice3 = calls.exec.slice(execBefore3);
+    assert(slice3.some((c) => c.includes("--no-session")), "globalEnabled=false → reflection still runs");
+    assert(slice3.some((c) => c.includes("create") && c.includes("wiki/projects/") && c.includes("overwrite=true")), "globalEnabled=false → project core still written");
+    assert(!slice3.some((c) => c.includes("create") && c.includes("wiki/global-core.md") && c.includes("overwrite=true")), "globalEnabled=false → global core NOT written");
+  } finally {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+  }
+}
+
+section("PM2-digest — injection flags (sessionStart / reInjectOnCompact)");
+{
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  // Fresh module = fresh session (bootstrap latch reset), so the sessionStart
+  // flag is observable at before_agent_start on the FIRST prompt.
+  const memo2 = await jiti.import(join(REPO, "extensions", "agents-memo.ts"));
+  const mock2 = createMockPi();
+  memo2.default(mock2.pi);
+  const fireStart = () => mock2.handlers["before_agent_start"].map((h) => h({}, mock2.ctx)).filter((r) => r !== undefined);
+  try {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: { vaultPath: VAULT, bootstrapReadHot: "always", memoryInjection: { sessionStart: false } },
+    }));
+    const results = fireStart();
+    assert(!results.some((r) => r.message.customType === "agents-memo-memory-digest"), "sessionStart=false → no digest on first prompt");
+    assert(results.some((r) => r.message.customType === "agents-memo-init"), "sessionStart=false → INIT injection unaffected");
+
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: { vaultPath: VAULT, memoryInjection: { reInjectOnCompact: false } },
+    }));
+    mock2.handlers["session_compact"].forEach((h) => h({}, mock2.ctx));
+    assert(!mock2.sent.some((s) => s.msg.customType === "agents-memo-memory-digest"), "reInjectOnCompact=false → no digest on compact");
+
+    // Decoupled slug cache: sessionStart=false still caches the slug at
+    // before_agent_start, so reInjectOnCompact=true alone re-injects the
+    // digest at compaction (no session-start digest was ever shown).
+    mock2.sent.length = 0;
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: { vaultPath: VAULT, memoryInjection: { sessionStart: false, reInjectOnCompact: true } },
+    }));
+    fireStart();
+    assert(!mock2.sent.some((s) => s.msg.customType === "agents-memo-memory-digest"), "sessionStart=false → still no digest at start");
+    mock2.handlers["session_compact"].forEach((h) => h({}, mock2.ctx));
+    assert(mock2.sent.some((s) => s.msg.customType === "agents-memo-memory-digest"), "sessionStart=false + reInjectOnCompact=true → digest re-injected at compact from cached slug");
+  } finally {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+  }
+}
+
+section("PM2-sweep — cross-project promotion");
+{
+  const { findCrossProjectEntries, sweepPromoteGlobal } = memoMod;
+
+  // Pure counting helper: normalized dedup across projects, threshold gate.
+  const projects = {
+    alpha: ["Use DI", "Pin deps"],
+    beta: ["Use DI", "pin  deps", "Single only"],
+  };
+  assert(JSON.stringify(findCrossProjectEntries(projects, 2)) === JSON.stringify(["Pin deps", "Use DI"]), "entries in 2 projects promote once (normalized dedup, spread-first order)");
+  assert(findCrossProjectEntries(projects, 3).length === 0, "threshold above distinct-project count → nothing");
+  assert(findCrossProjectEntries({ alpha: ["Use DI"], beta: ["Other"] }, 2).length === 0, "no shared entries → nothing");
+  assert(findCrossProjectEntries({ alpha: ["Use DI", "Use DI"], beta: ["Use DI"] }, 2).length === 1, "repeats within ONE project count once (threshold measures spread)");
+
+  // End-to-end sweep: real project dirs under the scratch vault (readdir is
+  // real fs; core reads + the global-core write go through the mocked CLI).
+  const projectsRoot = join(VAULT, "wiki", "projects");
+  mkdirSync(join(projectsRoot, "sweep-a", "daily"), { recursive: true });
+  mkdirSync(join(projectsRoot, "sweep-b", "daily"), { recursive: true });
+  writeFileSync(join(projectsRoot, "scratch.txt"), "not a project");
+  try {
+    projectFiles.set("wiki/projects/sweep-a/core.md", [
+      "---", "type: project-core", "project: sweep-a", "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+      `# Project Learnings — sweep-a`, "",
+      "## High-value learnings",
+      "- Use DI<!--score:2-->",
+      "- Pin deps<!--score:1-->",
+      "",
+      "## Watch-outs",
+      "- Avoid: guess<!--score:1-->",
+      "",
+    ].join("\n"));
+    projectFiles.set("wiki/projects/sweep-b/core.md", [
+      "---", "type: project-core", "project: sweep-b", "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+      "## High-value learnings",
+      "- Use DI<!--score:1-->",
+      "- Pin deps<!--score:1-->",
+      "- Single only<!--score:1-->",
+      "",
+    ].join("\n"));
+    projectFiles.delete("wiki/global-core.md");
+
+    const res = sweepPromoteGlobal(VAULT, 2);
+    assert(res.promoted === 2, "sweep promotes both cross-project entries");
+    const g = projectFiles.get("wiki/global-core.md") ?? "";
+    assert(g.includes("- Use DI<!--from:sweep-a,sweep-b--><!--score:1-->"), "promoted bullet carries provenance marker");
+    assert(g.includes("- Pin deps<!--from:sweep-a,sweep-b--><!--score:1-->"), "second promoted bullet carries provenance");
+    assert(!g.includes("Single only"), "single-project entry not promoted");
+    assert(!g.includes("Avoid: guess"), "watch-outs never promote");
+
+    // Idempotent re-run: nothing new, no duplicate bullets, no score inflation.
+    const beforeG = projectFiles.get("wiki/global-core.md");
+    const res2 = sweepPromoteGlobal(VAULT, 2);
+    assert(res2.promoted === 0, "idempotent re-run promotes nothing");
+    assert(projectFiles.get("wiki/global-core.md") === beforeG, "idempotent re-run leaves global core byte-identical");
+
+    // Threshold above the distinct-project count → nothing promoted.
+    assert(sweepPromoteGlobal(VAULT, 3).promoted === 0, "threshold 3 with 2 projects → nothing promoted");
+
+    // Read failure on one project core: that project is skipped, so the
+    // shared entry no longer reaches the threshold.
+    failReads.set("wiki/projects/sweep-b/core.md", "Error: boom");
+    assert(sweepPromoteGlobal(VAULT, 2).promoted === 0, "project read failure → that project skipped");
+    failReads.delete("wiki/projects/sweep-b/core.md");
+
+    // /wiki promote-global command: registered with a description and wired
+    // to the same sweep. The AC17-invalidation section leaves the module's
+    // cached vault pointing at a scratch cwd; firing session_shutdown (which
+    // clears the cache after re-resolving) makes the handler re-resolve to
+    // the restored VAULT settings on its next getVaultPath().
+    mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx));
+    const cmd = mock.commands.find((c) => c.name === "wiki promote-global");
+    assert(!!cmd && !!cmd?.opts?.description, "/wiki promote-global registered with description");
+    projectFiles.delete("wiki/global-core.md");
+    await cmd.opts.handler("", mock.ctx);
+    const afterCmd = projectFiles.get("wiki/global-core.md") ?? "";
+    assert(afterCmd.includes("<!--from:sweep-a,sweep-b-->"), "command handler runs the sweep (provenance written)");
+
+    // session_shutdown trigger: same sweep, runs at session end.
+    projectFiles.delete("wiki/global-core.md");
+    mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx));
+    const afterShutdown = projectFiles.get("wiki/global-core.md") ?? "";
+    assert(afterShutdown.includes("<!--from:sweep-a,sweep-b-->"), "session_shutdown trigger runs the sweep");
+  } finally {
+    rmSync(projectsRoot, { recursive: true, force: true });
+    projectFiles.delete("wiki/global-core.md");
+    projectFiles.delete("wiki/projects/sweep-a/core.md");
+    projectFiles.delete("wiki/projects/sweep-b/core.md");
+    failReads.clear();
+  }
+
+  // Missing projects dir → safe no-op (no throw, no write).
+  assert(sweepPromoteGlobal(VAULT, 2).promoted === 0, "no projects dir → 0 promoted, no throw");
 }
 
 section("M2 — claude settings tiers in extension resolution");
