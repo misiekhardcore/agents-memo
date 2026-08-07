@@ -153,6 +153,7 @@ function createMockPi() {
   let gitDirty = false;
   let gitCommitCode = 0;
   let notifyCount = 0;
+  const workingMessages = [];
   const dirts = { wiki: " M wiki/hot.md\n", obsidian: " M .obsidian/workspace.json\n" };
   const pi = {
     on(event, fn) { (handlers[event] ??= []).push(fn); },
@@ -179,7 +180,10 @@ function createMockPi() {
   const ctx = {
     hasUI: true,
     cwd: REPO,
-    ui: { notify: () => { notifyCount++; } },
+    ui: {
+      notify: () => { notifyCount++; },
+      setWorkingMessage: (msg) => { workingMessages.push(msg ?? null); },
+    },
     modelRegistry: {
       find: () => ({ provider: "deepseek", id: "deepseek-v4-flash" }),
       getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "mock-key" }),
@@ -191,6 +195,7 @@ function createMockPi() {
     setGitDirty: (d) => { gitDirty = d === true ? "wiki" : d; },
     setGitCommitCode: (c) => { gitCommitCode = c; },
     notifyCount: () => notifyCount,
+    workingMessages: () => workingMessages,
     ctx,
   };
 }
@@ -628,6 +633,7 @@ section("project-memory — agent_end reflection pipeline");
     { role: "assistant", content: [{ type: "text", text: "I changed the merge logic" }], timestamp: 2 },
   ];
   const reflectBefore = piAiCalls().length;
+  const workingBefore = mock.workingMessages().length;
   await settledEnd({ messages: conv });
   const slice = calls.exec.slice(execBefore);
 
@@ -640,6 +646,12 @@ section("project-memory — agent_end reflection pipeline");
   assert(refl.context?.messages?.[0]?.content?.[0]?.text.includes("<conversation>"), "reflection prompt embeds conversation");
   assert(refl.context?.messages?.[0]?.content?.[0]?.text.includes("Assistant: I changed the merge logic"), "reflection conversation serialized");
   assert(!slice.some((c) => c.includes("--mode") || c.includes("--no-session")), "no pi reflection subprocess spawned");
+
+  // Working indicator parity with pi-self-learning: "learning" during the
+  // pipeline, cleared afterwards.
+  const working = mock.workingMessages().slice(workingBefore);
+  assert(working[0] === "learning", "working indicator shown during learning");
+  assert(working.at(-1) === null, "working indicator cleared after learning");
 
   const projAppend = slice.filter((c) => c.includes("create-or-append") && c.includes("wiki/projects/"));
   assert(projAppend.length === 1, "agent_end appends project daily entry");
@@ -687,6 +699,23 @@ section("PM2 — withTimeout bounds the reflection model call (never hangs)");
   assert(aborted, "withTimeout aborts the controller on timeout");
 }
 
+section("PM2 — working indicator clears when reflection yields nothing");
+{
+  // No resolvable model → runReflection returns null → the indicator must
+  // still be cleared (finally), never left stale.
+  const origRegistry = mock.ctx.modelRegistry;
+  mock.ctx.modelRegistry = { find: () => undefined, getApiKeyAndHeaders: async () => ({ ok: false, error: "none" }) };
+  const workingBefore = mock.workingMessages().length;
+  try {
+    await settledEnd(agentEndEv());
+    const working = mock.workingMessages().slice(workingBefore);
+    assert(working[0] === "learning", "indicator shown before reflection attempt");
+    assert(working.at(-1) === null, "indicator cleared on null reflection (finally)");
+  } finally {
+    mock.ctx.modelRegistry = origRegistry;
+  }
+}
+
 section("project-memory — enabled=false falls back to legacy daily marker");
 {
   const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
@@ -697,6 +726,7 @@ section("project-memory — enabled=false falls back to legacy daily marker");
     await settledEnd({ messages: [] }); // consume residual flag
     const execBefore = calls.exec.length;
     const reflectBefore = piAiCalls().length;
+    const workingBefore = mock.workingMessages().length;
     const writeEv = { toolCallId: "t-pm2", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/legacy.md content="x"` } };
     mock.handlers["tool_call"][0](writeEv, mock.ctx);
     await settledEnd(agentEndEv());
@@ -706,6 +736,7 @@ section("project-memory — enabled=false falls back to legacy daily marker");
     assert(/daily\/\d{4}-\d{2}-\d{2}\.md/.test(appends[0] ?? ""), "legacy append targets global daily/YYYY-MM-DD.md");
     assert(!(appends[0] ?? "").includes("wiki/projects/"), "legacy append is NOT project-scoped");
     assert(piAiCalls().length === reflectBefore, "enabled=false → no reflection complete() call");
+    assert(!mock.workingMessages().slice(workingBefore).includes("learning"), "enabled=false → no working indicator");
   } finally {
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
   }

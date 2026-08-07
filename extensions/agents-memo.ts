@@ -1511,21 +1511,29 @@ export default function (pi: ExtensionAPI) {
     // In-process complete() wrapped in withTimeout — never blocks the session
     // event loop and strictly bounded (a hung model call resolves null after
     // REFLECTION_MODEL_TIMEOUT_MS instead of freezing the session).
-    const reflection = await runReflection(config, ctx, messages.slice(-8));
-    if (!reflection) return;
-    appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
-    updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);
-    // Global bucket: cross-project learnings land in wiki/global-core.md
-    // (skipped when the global store is disabled; empty-bucket reflections
-    // are a no-op merge over whatever the store already holds).
-    if (config.projectMemory?.globalEnabled !== false) {
-      updateGlobalCore(
-        vaultPath,
-        dateStr,
-        reflection,
-        config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
-        config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
-      );
+    // Working indicator during the learning pipeline (parity with
+    // pi-self-learning's "learning" status); cleared in finally so a timed-out
+    // reflection can never leave a stale indicator.
+    if (ctx.hasUI) ctx.ui.setWorkingMessage("learning");
+    try {
+      const reflection = await runReflection(config, ctx, messages.slice(-8));
+      if (!reflection) return;
+      appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
+      updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);
+      // Global bucket: cross-project learnings land in wiki/global-core.md
+      // (skipped when the global store is disabled; empty-bucket reflections
+      // are a no-op merge over whatever the store already holds).
+      if (config.projectMemory?.globalEnabled !== false) {
+        updateGlobalCore(
+          vaultPath,
+          dateStr,
+          reflection,
+          config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
+          config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
+        );
+      }
+    } finally {
+      if (ctx.hasUI) ctx.ui.setWorkingMessage();
     }
   });
 
