@@ -36,6 +36,12 @@ import type {
   ToolExecutionEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+// In-process model calls for the session reflection (agent_end). The pi
+// runtime resolves this bare specifier to its bundled compat entrypoint via
+// the extension-loader import map; the peer dependency only supplies types
+// and the hermetic smoke-test resolution.
+import { complete, getModel } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 
 // ─── Plugin root ──────────────────────────────────────────────────────────────
 // The extension lives at <pluginRoot>/extensions/agents-memo.ts; the plugin
@@ -551,10 +557,12 @@ function isDailyOverwrite(command: string): boolean {
 
 // ─── Reflection engine ────────────────────────────────────────────────────────
 // Per-project memory (docs/per-project-memory.md): on agent_end, distill the
-// last messages into a mistake/fix reflection via a cheap pi subprocess and
-// file it under wiki/projects/<slug>/ (daily + core.md). pi@0.83 exports no
-// complete()/getModel() API, so the reflection runs as a spawned pi process
-// (same invocation pattern memo_dispatch uses), testable via mock spawnSync.
+// last messages into a mistake/fix reflection via an in-process complete()
+// call and file it under wiki/projects/<slug>/ (daily + core.md). The call is
+// bounded by withTimeout so a slow/hung model can never block the session
+// (the previous spawned-pi-subprocess design froze the session for up to 60s
+// and could hang forever when the provider child survived SIGTERM while
+// holding the stdout pipe).
 
 interface Reflection {
   mistakes: string[];
@@ -570,18 +578,6 @@ interface ReflectionMessage {
   content: unknown;
   toolName?: string;
 }
-
-// Cached pi binary for the reflection subprocess (learning: never assume the
-// pi binary is on PATH for spawned processes).
-const PI_BIN = (() => {
-  try {
-    const out = spawnSync("which", ["pi"], { encoding: "utf-8", timeout: 5000 }).stdout.trim();
-    if (out) return out;
-  } catch {
-    // fall back to PATH lookup
-  }
-  return "pi";
-})();
 
 // Compact text transcript of the last messages, bounded per part and overall
 // (keep the tail - the reflection focuses on what just happened).
@@ -627,14 +623,6 @@ export function buildReflectionSystemPrompt(maxItems: number): string {
   ].join("\n");
 }
 
-function finalAssistantText(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  return (content as Array<{ type?: string; text?: string }>)
-    .filter((part) => part?.type === "text")
-    .map((part) => part.text ?? "")
-    .join("\n");
-}
-
 // Exported for the smoke test (pi only invokes the default export).
 export function parseReflectionJson(text: string): Reflection | null {
   const parse = (candidate: string): Reflection | null => {
@@ -663,50 +651,91 @@ export function parseReflectionJson(text: string): Reflection | null {
   return bare ? parse(bare[0]) : parse(trimmed);
 }
 
-function parseReflectionOutput(stdout: string): Reflection | null {
-  let lastText = "";
-  for (const line of stdout.split("\n")) {
-    if (!line.trim()) continue;
-    let event: { type?: string; message?: { content?: unknown } };
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === "message_end" && event.message) {
-      const text = finalAssistantText(event.message.content).trim();
-      if (text) lastText = text;
-    }
+// Bounded race: rejects after ms (aborting the controller, if given) so a
+// hung model call can never block the session. Exported for the smoke test.
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string, controller?: AbortController): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller?.abort();
+          reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return lastText ? parseReflectionJson(lastText) : null;
 }
 
-// Spawn pi --mode json -p --no-session with the reflection instructions as the
-// system prompt and the conversation as the user message. Synchronous
-// (spawnSync, per the design: deterministic and testable with a mocked
-// spawnSync); a timeout bounds the worst case so a hung model never blocks the
-// agent loop forever. Best-effort: any failure yields null and the caller
-// silently skips.
-function spawnReflectionSubprocess(config: AgentsMemoConfig, messages: ReflectionMessage[]): Reflection | null {
-  const model = config.reflectModel ?? REFLECT_MODEL_DEFAULTS;
-  const maxItems = config.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection;
-  const conversation = serializeMessages(messages);
-  const args: string[] = ["--mode", "json", "-p", "--no-session"];
-  if (model.provider) args.push("--provider", model.provider);
-  args.push("--model", model.id);
-  args.push("--system-prompt", buildReflectionSystemPrompt(maxItems));
-  args.push(`<conversation>\n${conversation}\n</conversation>`);
+const REFLECTION_MODEL_TIMEOUT_MS = 60_000;
+const REFLECTION_MAX_TOKENS = 900;
+
+type RequestAuth = { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
+
+// Resolve the reflection model + request auth: configured reflectModel first
+// (via the session's model registry, with a getModel fallback), then the
+// session's current model. Best-effort — null skips the reflection silently.
+async function pickReflectionModel(config: AgentsMemoConfig, ctx: ExtensionContext): Promise<{
+  model: Model<Api>;
+  apiKey?: string;
+  headers?: Record<string, string>;
+} | null> {
+  const wanted = config.reflectModel ?? REFLECT_MODEL_DEFAULTS;
+  const registry = (ctx.modelRegistry ?? {}) as unknown as {
+    find?: (provider: string, id: string) => Model<Api> | undefined;
+    getApiKeyAndHeaders?: (model: Model<Api>) => Promise<RequestAuth>;
+  };
+  const findModel = (provider: string, id: string): Model<Api> | undefined =>
+    registry.find?.(provider, id) ??
+    (getModel as unknown as (p: string, i: string) => Model<Api> | undefined)(provider, id);
+  const candidates = [findModel(wanted.provider, wanted.id), ctx.model].filter(
+    (m): m is Model<Api> => !!m && typeof (m as { provider?: unknown }).provider === "string" && typeof (m as { id?: unknown }).id === "string",
+  );
+  for (const model of candidates) {
+    try {
+      const auth = await registry.getApiKeyAndHeaders?.(model);
+      if (auth?.ok === true) return { model, apiKey: auth.apiKey, headers: auth.headers };
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+// Distill the run into a reflection via an in-process complete() call wrapped
+// in withTimeout — asynchronous and strictly bounded, so a slow or hung model
+// can never freeze the session (the pre-fix spawned subprocess froze the
+// event loop for up to 60s and could hang indefinitely). Best-effort: any
+// failure yields null and the caller silently skips.
+async function runReflection(config: AgentsMemoConfig, ctx: ExtensionContext, messages: ReflectionMessage[]): Promise<Reflection | null> {
   try {
-    const result = spawnSync(PI_BIN, args, {
-      encoding: "utf-8",
-      timeout: 60000,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
-    });
-    if (result.status !== 0 || !result.stdout) return null;
-    return parseReflectionOutput(result.stdout);
+    const picked = await pickReflectionModel(config, ctx);
+    if (!picked) return null;
+    const maxItems = config.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection;
+    const conversation = serializeMessages(messages);
+    const prompt = `${buildReflectionSystemPrompt(maxItems)}\n\n<conversation>\n${conversation}\n</conversation>`;
+    const controller = new AbortController();
+    const response = await withTimeout(
+      complete(
+        picked.model,
+        { messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
+        { apiKey: picked.apiKey, headers: picked.headers, maxTokens: REFLECTION_MAX_TOKENS, signal: controller.signal },
+      ),
+      REFLECTION_MODEL_TIMEOUT_MS,
+      "reflection model call",
+      controller,
+    );
+    const text = (response.content as Array<{ type?: string; text?: string }>)
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join("\n")
+      .trim();
+    return text ? parseReflectionJson(text) : null;
   } catch {
-    return null;
+    return null; // timed out, no auth, network failure — best-effort
   }
 }
 
@@ -1430,10 +1459,19 @@ export default function (pi: ExtensionAPI) {
     if (!vaultPath || config.autoCommit === false) return;
 
     try {
-      const status = await pi.exec("git", ["-C", vaultPath, "status", "--porcelain"]);
+      // Status gate scoped to the paths git add stages — Obsidian's own
+      // .obsidian/* churn (workspace.json, types.json) would otherwise keep
+      // the whole-repo gate permanently open and fire false notifications.
+      const status = await pi.exec("git", ["-C", vaultPath, "status", "--porcelain", "--", "wiki/", ".raw/"]);
       if (status.code !== 0 || status.stdout.trim().length === 0) return;
-      await pi.exec("git", ["-C", vaultPath, "add", "wiki/", ".raw/"]);
-      await pi.exec("git", ["-C", vaultPath, "commit", "-m", "auto: vault changes [agents-memo]"]);
+      // pi.exec resolves with {code} on failure (never throws): "nothing to
+      // commit" exits 1, so gate the notify on the actual commit result and
+      // exit silently otherwise — parity with log-obsidian-calls.sh's
+      // `git diff --cached --quiet` gating.
+      const add = await pi.exec("git", ["-C", vaultPath, "add", "wiki/", ".raw/"]);
+      if (add.code !== 0) return;
+      const commit = await pi.exec("git", ["-C", vaultPath, "commit", "-m", "auto: vault changes [agents-memo]"]);
+      if (commit.code !== 0) return;
       if (ctx.hasUI) {
         ctx.ui.notify("Wiki updated - changes auto-committed", "info");
       }
@@ -1443,7 +1481,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── AC16: agent_end - reflect the run into project memory (or legacy daily) ─
-  pi.on("agent_end", (event: AgentEndEvent, ctx: ExtensionContext) => {
+  pi.on("agent_end", async (event: AgentEndEvent, ctx: ExtensionContext) => {
     // Consume the per-run flag first so reflection never double-fires and the
     // next run starts clean (agent_end fires before agent_settled in the pi
     // runtime: _emitExtensionEvent → _emitAgentSettled).
@@ -1470,7 +1508,10 @@ export default function (pi: ExtensionAPI) {
     const timeStr = now.toTimeString().slice(0, 5);
     const messages = (event.messages ?? []) as ReflectionMessage[];
     if (messages.length === 0) return;
-    const reflection = spawnReflectionSubprocess(config, messages.slice(-8));
+    // In-process complete() wrapped in withTimeout — never blocks the session
+    // event loop and strictly bounded (a hung model call resolves null after
+    // REFLECTION_MODEL_TIMEOUT_MS instead of freezing the session).
+    const reflection = await runReflection(config, ctx, messages.slice(-8));
     if (!reflection) return;
     appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
     updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);

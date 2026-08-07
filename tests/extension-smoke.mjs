@@ -13,11 +13,11 @@
 //   AC13    tool_execution_end hot-cache 0-byte guard
 //   AC14-15 agent_settled auto-commit + notify
 //   AC16-17 agent_end / session_shutdown reflection (write-verb touched tracking)
-//   PM      per-project memory: slug derivation, reflection subprocess,
-//           project daily + core.md pipeline, legacy fallback, core.md
-//           parse/merge/render pure functions, digest injection at
-//           before_agent_start + compact, reflectUntouchedRuns gate,
-//           global core read-failure guard
+//   PM      per-project memory: slug derivation, bounded in-process
+//           reflection (complete() mock via jiti alias), project daily +
+//           core.md pipeline, legacy fallback, core.md parse/merge/render
+//           pure functions, digest injection at before_agent_start + compact,
+//           reflectUntouchedRuns gate, global core read-failure guard
 //   AC18-21 memo_dispatch discovery, frontmatter conversion, single/parallel/chain, registration
 
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
@@ -97,22 +97,14 @@ cp.execSync = (cmd) => {
   return "";
 };
 // Synchronous git restore used by the AC13 hot-cache guard (spawnSync — no
-// shell interpolation of the vault path). Also serves the project-memory
-// reflection subprocess: any pi --mode json invocation returns a canned
-// reflection as pi's JSON-lines message_end event.
-const REFLECTION_OUTPUT = { mistakes: ["m1", "m2"], fixes: ["f1", "f2"] };
+// shell interpolation of the vault path). The reflection no longer uses a pi
+// subprocess (in-process complete() instead, mocked via the jiti alias below),
+// so no canned pi --mode json branch is needed here.
 cp.spawnSync = (command, args) => {
   calls.exec.push([command, ...args].join(" "));
   if (args.includes("wiki/hot.md")) {
     // simulate a successful git restore from HEAD
     writeFileSync(join(VAULT, "wiki", "hot.md"), "hot cache restored\n");
-  } else if (args.includes("--mode") && args.includes("json")) {
-    const text = JSON.stringify(REFLECTION_OUTPUT);
-    return {
-      status: 0,
-      stdout: JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }] }}) + "\n",
-      stderr: "",
-    };
   }
   return { status: 0, stdout: "", stderr: "" };
 };
@@ -154,8 +146,14 @@ function createMockPi() {
   const commands = [];
   const sent = [];
   const execs = [];
+  // Models git's own pathspec filtering: dirt is reportable only when it is
+  // in scope (wiki/ for the extension's scoped status, anything for a
+  // whole-repo status). Modes: true/"wiki" → wiki dirt, "obsidian" →
+  // .obsidian/workspace.json dirt (Obsidian's own churn), false → clean.
   let gitDirty = false;
+  let gitCommitCode = 0;
   let notifyCount = 0;
+  const dirts = { wiki: " M wiki/hot.md\n", obsidian: " M .obsidian/workspace.json\n" };
   const pi = {
     on(event, fn) { (handlers[event] ??= []).push(fn); },
     registerTool(tool) { tools.push(tool); },
@@ -164,22 +162,74 @@ function createMockPi() {
     exec(cmd, args) {
       execs.push([cmd, ...args]);
       if (cmd === "git" && args[2] === "status") {
-        return Promise.resolve({ code: 0, stdout: gitDirty ? " M wiki/hot.md\n" : "" });
+        const dirt = dirts[gitDirty] ?? "";
+        // git status --porcelain -- wiki/ .raw/ suppresses out-of-scope dirt.
+        const scoped = args.includes("--") && args.includes("wiki/") && args.includes(".raw/");
+        const visible = scoped ? (gitDirty === "wiki" ? dirt : "") : dirt;
+        return Promise.resolve({ code: 0, stdout: visible });
+      }
+      if (cmd === "git" && args.includes("commit")) {
+        // pi.exec resolves with {code} on failure (never throws) — the
+        // handler must inspect it; "nothing to commit" exits 1.
+        return Promise.resolve({ code: gitCommitCode, stdout: "" });
       }
       return Promise.resolve({ code: 0, stdout: "" });
     },
   };
-  const ctx = { hasUI: true, cwd: REPO, ui: { notify: () => { notifyCount++; } } };
+  const ctx = {
+    hasUI: true,
+    cwd: REPO,
+    ui: { notify: () => { notifyCount++; } },
+    modelRegistry: {
+      find: () => ({ provider: "deepseek", id: "deepseek-v4-flash" }),
+      getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "mock-key" }),
+    },
+    model: undefined,
+  };
   return {
     pi, handlers, tools, commands, sent, execs,
-    setGitDirty: (d) => { gitDirty = d; },
+    setGitDirty: (d) => { gitDirty = d === true ? "wiki" : d; },
+    setGitCommitCode: (c) => { gitCommitCode = c; },
     notifyCount: () => notifyCount,
     ctx,
   };
 }
 
+// ─── Mock @mariozechner/pi-ai (reflection complete()) ────────────────────────
+// The extension imports complete/getModel from @mariozechner/pi-ai, which pi's
+// runtime resolves to its bundled compat entrypoint. For the hermetic smoke
+// test the bare specifier is aliased (jiti alias) to this mock: complete()
+// appends one JSON line per call to $PI_AI_MOCK_LOG and returns a canned
+// reflection, so the reflection pipeline is assertable end-to-end without a
+// model or subprocess.
+const PI_AI_MOCK = join(SCRATCH, "mock-pi-ai.mjs");
+writeFileSync(
+  PI_AI_MOCK,
+  [
+    `import { appendFileSync } from "node:fs";`,
+    `export function complete(model, context, options) {`,
+    `  appendFileSync(process.env.PI_AI_MOCK_LOG, JSON.stringify({ model, context, options }) + "\\n");`,
+    `  const text = JSON.stringify({ mistakes: ["m1", "m2"], fixes: ["f1", "f2"] });`,
+    `  return Promise.resolve({ role: "assistant", content: [{ type: "text", text }] });`,
+    `}`,
+    `export function getModel() { return undefined; }`,
+  ].join("\n"),
+);
+const PI_AI_LOG = join(SCRATCH, "pi-ai-calls.log");
+writeFileSync(PI_AI_LOG, "");
+process.env.PI_AI_MOCK_LOG = PI_AI_LOG;
+const piAiCalls = () =>
+  readFileSync(PI_AI_LOG, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
 const { createJiti } = require("jiti");
-const jiti = createJiti(import.meta.url, { moduleCache: false });
+const jiti = createJiti(import.meta.url, {
+  moduleCache: false,
+  alias: { "@mariozechner/pi-ai": PI_AI_MOCK },
+});
 
 // ═══════════════════════════ agents-memo.ts ═════════════════════════════════
 const memoMod = await jiti.import(join(REPO, "extensions", "agents-memo.ts"));
@@ -287,6 +337,9 @@ section("AC12 — vault I/O block + bypasses");
 }
 
 const settled = () => Promise.all(mock.handlers["agent_settled"].map((h) => h({}, mock.ctx)));
+// agent_end handlers are async (in-process reflection) — always await them so
+// write assertions observe completed reflections.
+const settledEnd = (ev) => Promise.all(mock.handlers["agent_end"].map((h) => h(ev, mock.ctx)));
 
 section("AC16/17 — write-verb touched tracking");
 {
@@ -307,46 +360,46 @@ section("AC16/17 — write-verb touched tracking");
   // Consume the per-run flag via agent_end (it resets the flag now, not
   // agent_settled) so this section starts from a clean slate.
   mock.setGitDirty(false);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   const appends = () => calls.exec.filter((c) => c.includes("create-or-append"));
   const before = appends().length;
   const readEv = { toolCallId: "t-r", toolName: "bash", input: { command: `obsidian read path=wiki/hot.md` } };
   mock.handlers["tool_call"][0](readEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before, "read-only session → no reflection append");
   const writeEv = { toolCallId: "t-w", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/x.md content="hello"` } };
   mock.handlers["tool_call"][0](writeEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 1, "write verb → agent_end reflection appended");
   assert(/daily\/\d{4}-\d{2}-\d{2}\.md/.test(appends().at(-1) ?? ""), "reflection targets daily/YYYY-MM-DD.md");
   // eval write verb (parity with log-obsidian-calls.sh's auto-commit verbs).
   const evalEv = { toolCallId: "t-eval", toolName: "bash", input: { command: `obsidian eval code="1"` } };
   mock.handlers["tool_call"][0](evalEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 2, "eval verb → agent_end reflection appended");
   // non-write verb (read) after a pipe to a write word must NOT touch (verb is
   // extracted positionally, mirroring log-obsidian-calls.sh).
   const pipeEv = { toolCallId: "t-pipe", toolName: "bash", input: { command: `obsidian read path=wiki/hot.md | grep append` } };
   mock.handlers["tool_call"][0](pipeEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 2, "read | grep append → no reflection (positional verb extraction)");
   // compound already-routed command: the LAST write verb wins (parity with
   // log-obsidian-calls.sh's greedy `s/.*obsidian-cli\.sh[^[:space:]]* //`).
   const compoundEv = { toolCallId: "t-compound", toolName: "bash", input: { command: `"${REPO}/scripts/obsidian-cli.sh" read path=wiki/hot.md && "${REPO}/scripts/obsidian-cli.sh" append file=wiki/hot.md content="x"` } };
   mock.handlers["tool_call"][0](compoundEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 3, "compound read && append → reflection appended (last verb wins)");
   // env-prefixed raw command (FOO=bar obsidian ...): bash strips leading
   // KEY=val assignments before extracting the verb — the extension must too.
   const envEv = { toolCallId: "t-env", toolName: "bash", input: { command: `FOO=bar obsidian append file=wiki/hot.md content="x"` } };
   mock.handlers["tool_call"][0](envEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 4, "env-prefixed obsidian append → reflection appended");
   // trailing wrapper with no verb: bash's greedy regex backtracks to the
   // prior wrapper occurrence and still extracts the verb.
   const trailEv = { toolCallId: "t-trail", toolName: "bash", input: { command: `"${REPO}/scripts/obsidian-cli.sh" append file=wiki/hot.md content="x" && "${REPO}/scripts/obsidian-cli.sh"` } };
   mock.handlers["tool_call"][0](trailEv, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+  await settledEnd(agentEndEv());
   assert(appends().length === before + 5, "trailing wrapper backtracks to prior verb → reflection appended");
   } finally {
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
@@ -421,6 +474,21 @@ section("AC14/15 — agent_settled auto-commit + notify");
   assert(mock.execs.some((e) => e[0] === "git" && e.includes("commit") && e.includes("auto: vault changes [agents-memo]")), "auto-commit with message");
   assert(mock.notifyCount() === 1, "WIKI_CHANGED notification shown");
 
+  // Status gate is scoped to vault paths (parity with what git add stages):
+  // Obsidian's own .obsidian/* churn must not keep the gate open.
+  const statusCall = mock.execs.find((e) => e[0] === "git" && e[3] === "status");
+  assert(statusCall?.includes("--") && statusCall.includes("wiki/") && statusCall.includes(".raw/"), "status gate scoped to wiki/ + .raw/ (pathspec)");
+
+  // .obsidian/workspace.json churn alone → pathspec filters it → no
+  // add/commit and no notify (the false-positive scenario from #186-era
+  // regression that shipped the unconditional toast).
+  mock.setGitDirty("obsidian");
+  const beforeObs = mock.execs.length;
+  const notifyBeforeObs = mock.notifyCount();
+  await settled();
+  assert(!mock.execs.slice(beforeObs).some((e) => e[0] === "git" && (e.includes("add") || e.includes("commit"))), ".obsidian churn alone → no git add/commit");
+  assert(mock.notifyCount() === notifyBeforeObs, ".obsidian churn alone → no notification");
+
   // clean repo → status checked but no commit, no notify
   mock.setGitDirty(false);
   const writeEv2 = { toolCallId: "t-c2", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="y"` } };
@@ -431,7 +499,7 @@ section("AC14/15 — agent_settled auto-commit + notify");
   assert(mock.notifyCount() === 1, "clean repo → no notification");
 
   // flag consumed by agent_end → subsequent settled() with no writes commits nothing
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx));
+  await settledEnd({});
   const before2 = mock.execs.length;
   await settled();
   const postEnd = mock.execs.slice(before2);
@@ -443,10 +511,25 @@ section("AC14/15 — agent_settled auto-commit + notify");
   mock.setGitDirty(true);
   const writeEv3 = { toolCallId: "t-c3", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="z"` } };
   mock.handlers["tool_call"][0](writeEv3, mock.ctx);
-  mock.handlers["agent_end"].forEach((h) => h({}, mock.ctx)); // agent_end consumes the flag first
+  await settledEnd({}); // agent_end consumes the flag first
   const before3 = mock.execs.length;
   await settled();
   assert(mock.execs.slice(before3).some((e) => e[0] === "git" && e.includes("commit")), "auto-commit still fires after agent_end (write → agent_end → agent_settled)");
+
+  // commit exit 1 ("nothing to commit") → pi.exec resolves with {code: 1}
+  // instead of throwing; the handler must not notify. Regression: false
+  // 'auto-committed' toasts fired on every agent_settled while only non-wiki
+  // changes existed, and the fix was previously lost in the pi migration
+  // (a19f956) for lack of a commit-exit-1 test path.
+  mock.setGitDirty(true);
+  mock.setGitCommitCode(1);
+  const writeEv4 = { toolCallId: "t-c4", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="q"` } };
+  mock.handlers["tool_call"][0](writeEv4, mock.ctx);
+  const notifyBeforeFail = mock.notifyCount();
+  await settled();
+  assert(mock.execs.slice().some((e) => e[0] === "git" && e.includes("commit")), "commit attempted on wiki dirt");
+  assert(mock.notifyCount() === notifyBeforeFail, "commit exit 1 → no notification");
+  mock.setGitCommitCode(0);
 }
 
 section("AC17 — session_shutdown reflection");
@@ -536,7 +619,7 @@ section("project-memory — core.md pure functions");
 section("project-memory — agent_end reflection pipeline");
 {
   // consume any residual touched flag
-  mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx));
+  await settledEnd({ messages: [] });
   const execBefore = calls.exec.length;
   const writeEv = { toolCallId: "t-pm1", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/pm.md content="x"` } };
   mock.handlers["tool_call"][0](writeEv, mock.ctx);
@@ -544,16 +627,19 @@ section("project-memory — agent_end reflection pipeline");
     { role: "user", content: "fix the merge bug", timestamp: 1 },
     { role: "assistant", content: [{ type: "text", text: "I changed the merge logic" }], timestamp: 2 },
   ];
-  mock.handlers["agent_end"].forEach((h) => h({ messages: conv }, mock.ctx));
+  const reflectBefore = piAiCalls().length;
+  await settledEnd({ messages: conv });
   const slice = calls.exec.slice(execBefore);
 
-  const spawn = slice.find((c) => c.includes("--no-session"));
-  assert(!!spawn, "agent_end spawns reflection subprocess");
-  assert(spawn?.includes("--mode json"), "reflection spawns pi --mode json");
-  assert(spawn?.includes("--provider deepseek"), "reflection uses reflectModel provider");
-  assert(spawn?.includes("--model deepseek-v4-flash"), "reflection uses reflectModel id");
-  assert(spawn?.includes("<conversation>"), "reflection prompt embeds conversation");
-  assert(spawn?.includes("Assistant: I changed the merge logic"), "reflection conversation serialized");
+  // The reflection is an in-process complete() call (no pi subprocess).
+  const reflCalls = piAiCalls().slice(reflectBefore);
+  assert(reflCalls.length === 1, "agent_end performs exactly one complete() reflection call");
+  const refl = reflCalls[0];
+  assert(refl.model.provider === "deepseek" && refl.model.id === "deepseek-v4-flash", "reflection uses reflectModel provider/id");
+  assert(refl.options?.maxTokens === 900, "reflection caps maxTokens");
+  assert(refl.context?.messages?.[0]?.content?.[0]?.text.includes("<conversation>"), "reflection prompt embeds conversation");
+  assert(refl.context?.messages?.[0]?.content?.[0]?.text.includes("Assistant: I changed the merge logic"), "reflection conversation serialized");
+  assert(!slice.some((c) => c.includes("--mode") || c.includes("--no-session")), "no pi reflection subprocess spawned");
 
   const projAppend = slice.filter((c) => c.includes("create-or-append") && c.includes("wiki/projects/"));
   assert(projAppend.length === 1, "agent_end appends project daily entry");
@@ -570,6 +656,37 @@ section("project-memory — agent_end reflection pipeline");
   assert(/<!--score:\d+-->/.test(coreContent), "core.md entries carry score markers");
 }
 
+section("PM2 — withTimeout bounds the reflection model call (never hangs)");
+{
+  const { withTimeout } = memoMod;
+  // A model call that never resolves must reject at the bound — the exact
+  // failure mode that froze the session with the old spawnSync subprocess.
+  const never = new Promise(() => {});
+  let timedOut = false;
+  const started = Date.now();
+  try {
+    await withTimeout(never, 50, "never-resolving test promise");
+  } catch {
+    timedOut = true;
+  }
+  assert(timedOut, "withTimeout rejects when the promise never resolves");
+  assert(Date.now() - started < 2000, "withTimeout rejects at the bound, not later");
+
+  // Resolving promises pass through and the timer is cleared.
+  assert(await withTimeout(Promise.resolve("ok"), 50, "resolving test promise") === "ok", "withTimeout resolves the inner promise");
+
+  // The controller is aborted on timeout so the underlying request is cancelled.
+  const controller = new AbortController();
+  let aborted = false;
+  controller.signal.addEventListener("abort", () => { aborted = true; });
+  try {
+    await withTimeout(never, 20, "abort test", controller);
+  } catch {
+    // expected
+  }
+  assert(aborted, "withTimeout aborts the controller on timeout");
+}
+
 section("project-memory — enabled=false falls back to legacy daily marker");
 {
   const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
@@ -577,17 +694,18 @@ section("project-memory — enabled=false falls back to legacy daily marker");
     agentsMemo: { vaultPath: VAULT, projectMemory: { enabled: false } },
   }));
   try {
-    mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx)); // consume residual flag
+    await settledEnd({ messages: [] }); // consume residual flag
     const execBefore = calls.exec.length;
+    const reflectBefore = piAiCalls().length;
     const writeEv = { toolCallId: "t-pm2", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/legacy.md content="x"` } };
     mock.handlers["tool_call"][0](writeEv, mock.ctx);
-    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    await settledEnd(agentEndEv());
     const slice = calls.exec.slice(execBefore);
     const appends = slice.filter((c) => c.includes("create-or-append"));
     assert(appends.length === 1, "enabled=false → legacy global daily append");
     assert(/daily\/\d{4}-\d{2}-\d{2}\.md/.test(appends[0] ?? ""), "legacy append targets global daily/YYYY-MM-DD.md");
     assert(!(appends[0] ?? "").includes("wiki/projects/"), "legacy append is NOT project-scoped");
-    assert(!slice.some((c) => c.includes("--no-session")), "enabled=false → no reflection subprocess spawned");
+    assert(piAiCalls().length === reflectBefore, "enabled=false → no reflection complete() call");
   } finally {
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
   }
@@ -957,16 +1075,17 @@ section("PM2-agent_end — reflectUntouchedRuns gate + global write");
 {
   const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
   // Consume any residual touched flag (messages empty → no reflection).
-  mock.handlers["agent_end"].forEach((h) => h({ messages: [] }, mock.ctx));
+  await settledEnd({ messages: [] });
   try {
     // Default (reflectUntouchedRuns=true): an untouched run still reflects —
     // daily entry + project core + global core all written (empty-bucket
     // no-ops where there is nothing to merge).
     projectFiles.delete("wiki/global-core.md");
     const execBefore = calls.exec.length;
-    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const reflectBefore = piAiCalls().length;
+    await settledEnd(agentEndEv());
     const slice = calls.exec.slice(execBefore);
-    assert(slice.some((c) => c.includes("--no-session")), "untouched run reflects when reflectUntouchedRuns=true (default)");
+    assert(piAiCalls().length === reflectBefore + 1, "untouched run reflects when reflectUntouchedRuns=true (default)");
     assert(slice.some((c) => c.includes("create-or-append") && c.includes("wiki/projects/")), "untouched run still writes the project daily entry");
     assert(slice.some((c) => c.includes("create") && c.includes("wiki/global-core.md") && c.includes("overwrite=true")), "untouched run writes global core (empty-bucket no-op)");
 
@@ -975,7 +1094,7 @@ section("PM2-agent_end — reflectUntouchedRuns gate + global write");
       agentsMemo: { vaultPath: VAULT, projectMemory: { reflectUntouchedRuns: false } },
     }));
     const execBefore2 = calls.exec.length;
-    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    await settledEnd(agentEndEv());
     const slice2 = calls.exec.slice(execBefore2);
     assert(slice2.length === 0, "reflectUntouchedRuns=false → untouched run reflects nothing");
 
@@ -986,9 +1105,10 @@ section("PM2-agent_end — reflectUntouchedRuns gate + global write");
     const writeEv = { toolCallId: "t-pm2g", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/pm2.md content="x"` } };
     mock.handlers["tool_call"][0](writeEv, mock.ctx);
     const execBefore3 = calls.exec.length;
-    mock.handlers["agent_end"].forEach((h) => h(agentEndEv(), mock.ctx));
+    const reflectBefore3 = piAiCalls().length;
+    await settledEnd(agentEndEv());
     const slice3 = calls.exec.slice(execBefore3);
-    assert(slice3.some((c) => c.includes("--no-session")), "globalEnabled=false → reflection still runs");
+    assert(piAiCalls().length === reflectBefore3 + 1, "globalEnabled=false → reflection still runs");
     assert(slice3.some((c) => c.includes("create") && c.includes("wiki/projects/") && c.includes("overwrite=true")), "globalEnabled=false → project core still written");
     assert(!slice3.some((c) => c.includes("create") && c.includes("wiki/global-core.md") && c.includes("overwrite=true")), "globalEnabled=false → global core NOT written");
   } finally {

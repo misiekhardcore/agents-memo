@@ -42,18 +42,23 @@ Project slug derived from:
   },
   "reflectModel": {
     "provider": "deepseek",
-    "id": "deepseek-v4-flash"     // cheap model for reflection subprocess
+    "id": "deepseek-v4-flash"     // cheap model for the reflection call
   }
 }
 ```
 
 `resolve-config.sh` extended with `project_memory_enabled` → `projectMemory.enabled` mapping.
 
-## 4. API constraint: no `complete()` at pi@0.83
+## 4. Reflection API: in-process `complete()` via `@mariozechner/pi-ai`
 
-Verified: `@earendil-works/pi-ai` at pi@0.83.0 exports neither `complete` nor `getModel`. The `dist/index.js` file has zero matches for either symbol.
-
-**Solution**: spawn `pi --mode json -p --no-session --model <reflectModel>` subprocess with a reflection prompt — same pattern memo_dispatch uses for sub-agents. This is testable (mock spawnSync), uses existing auth/config, and avoids depending on an API that doesn't exist.
+The pi runtime resolves the bare `@mariozechner/pi-ai` specifier to its bundled
+compat entrypoint (extension-loader import map), which exports `complete()` and
+`getModel()`. The reflection therefore runs in-process — no subprocess, no
+blocking `spawnSync` on the session event loop. Every call is wrapped in
+`withTimeout` (60s) with an AbortSignal, so a slow or hung model can never
+freeze the session (the old spawned `pi --mode json` subprocess blocked the
+loop for up to 60s and could hang indefinitely when the provider child
+survived SIGTERM while holding the stdout pipe).
 
 ## 5. Extension changes
 
@@ -119,9 +124,10 @@ pi.on("agent_end", (_event, ctx) => {
   const messages = getBranchMessages(ctx, 8);
   if (messages.length === 0) return;
 
-  // Spawn pi subprocess for LLM reflection (no complete() API available)
-  spawnReflectionSubprocess(config, messages, (reflection) => {
-    if (!reflection) return;
+  // In-process complete() call (bounded by withTimeout — never blocks the
+  // session; the old spawned pi subprocess could freeze it for 60s+)
+  const reflection = await runReflection(config, ctx, messages.slice(-8));
+  if (reflection) {
     // Write reflection to wiki/projects/<slug>/daily/YYYY-MM-DD.md
     appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
     // Update core.md: merge + dedup + cap
@@ -130,7 +136,7 @@ pi.on("agent_end", (_event, ctx) => {
 });
 ```
 
-**Reflection prompt** (sent to pi subprocess):
+**Reflection prompt** (sent as the complete() user message):
 ```
 You are a coding session mistake-prevention reflection engine.
 Focus on what went wrong and how it was fixed.
@@ -199,14 +205,14 @@ updated: <date>
 
 **Monthly synthesis** (session_shutdown, optional): if today crosses a new month:
 1. Read all daily entries for the previous month from `wiki/projects/<slug>/daily/`
-2. Spawn pi subprocess with month-summary prompt
+2. (planned) In-process month-summary call, bounded the same way
 3. Write/overwrite `wiki/projects/<slug>/monthly/YYYY-MM.md`
 
 ## 6. Test plan
 
 1. **extension-smoke.mjs**: add sections for:
    - Project slug derivation (git remote, no-git fallback, sanitization)
-   - agent_end: spawns reflection subprocess with correct prompt, writes to project daily path, updates core.md
+   - agent_end: performs one bounded in-process complete() reflection (no subprocess), writes to project daily path, updates core.md
    - agent_end: falls back to legacy global marker when projectMemory.enabled=false
    - before_agent_start: injects project core.md when projectMemory.enabled
    - session_compact: re-injects project core.md
@@ -220,7 +226,7 @@ updated: <date>
 
 1. Extend `AgentsMemoConfig` interface + `readPiSettings()` in `extensions/agents-memo.ts`
 2. Add `getProjectSlug()` function
-3. Replace static `appendDailyReflection` with `spawnReflectionSubprocess` + `appendProjectDailyEntry`
+3. Replace static `appendDailyReflection` with async `runReflection` (bounded in-process complete()) + `appendProjectDailyEntry`
 4. Add `updateProjectCore()` (create/merge/dedup/cap)
 5. Add `before_agent_start` handler for project core.md injection
 6. Add `session_compact` re-injection for project core.md
@@ -357,7 +363,7 @@ DURING SESSION
 RUN END
   agent_end (extension):
     gate: vault touched (or always — pending reflectUntouchedRuns decision)
-    last 8 messages → spawn reflection subprocess (deepseek-v4-flash)
+    last 8 messages → in-process complete() reflection (deepseek-v4-flash, 60s bound)
     → returns {mistakes, fixes, global}
     extension writes 3 artifacts via obsidian CLI:
       1. daily/YYYY-MM-DD.md       append  (EPISODIC record)
@@ -386,17 +392,17 @@ Artifact-author table:
 |Artifact|Created by|When|Method|
 |-|-|-|-|
 |Digest (injected, not a file)|extension before_agent_start / session_compact|session start + each compaction|read cores, truncate to budget, hidden message|
-|projects/<slug>/daily/YYYY-MM-DD.md|extension agent_end|each reflected run|subprocess reflection → create-or-append|
+|projects/<slug>/daily/YYYY-MM-DD.md|extension agent_end|each reflected run|bounded complete() reflection → create-or-append|
 |projects/<slug>/core.md|extension agent_end|each reflected run|fixes→learnings, mistakes→watch-outs; dedup/score/cap → create overwrite|
 |global-core.md|extension agent_end + promotion sweep|each reflected run + sweep|merge global bucket; sweep promotes cross-project repeats|
 |concepts/, entities/, sources/ pages|agent/human via skills|on demand|/save, /ingest + index + hot (existing pipeline)|
 |hot.md, index.md|agents|on demand|existing hot-cache / index protocols|
-|monthly/YYYY-MM.md|extension (future)|month boundary|subprocess month-summary over dailies|
+|monthly/YYYY-MM.md|extension (future)|month boundary|bounded month-summary call over dailies (future)|
 
 Self-reinforcing loop: reflection → cores rank up → next session's digest carries top lessons → agent behaves differently → future reflections confirm/refine → scores climb. Dailies = raw evidence trail; cores = compiled rules; pages = deep knowledge; digest = the only thing that touches the prompt.
 
 Nuances:
 
 1. First session in a new project: no project core → digest = global core + pointer; the first reflection run creates the project subtree
-2. The reflection subprocess is the only LLM writer; the extension is a compiler (merge/dedup/rank — deterministic); skills write pages; the sweep moves verbatim entries, writes nothing new
+2. The bounded in-process reflection call is the only LLM writer; the extension is a compiler (merge/dedup/rank — deterministic); skills write pages; the sweep moves verbatim entries, writes nothing new
 3. Pages are auto-DETECTED (score ≥ pageCandidacyThreshold → <!--candidate--> marker + digest nudge) but never auto-WRITTEN — creation stays human/agent-initiated via the existing /save flow; cores never spawn concept pages by themselves
