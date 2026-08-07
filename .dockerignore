@@ -15,9 +15,6 @@
 # Test artifacts
 tests/spike-results
 
-# Local Claude state (worklog, hooks output)
-.claude
-
 # Node / build artifacts (defensive — none currently in repo)
 node_modules
 dist

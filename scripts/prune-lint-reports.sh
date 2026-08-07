@@ -56,7 +56,7 @@ VAULT="$("${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh")" || {
 }
 
 # In-worktree guard (see header). A bare invocation resolving an external
-# vault pruned 2 real files in ~/Projects/claude-memory during a fallback
+# vault pruned 2 real files in ~/Projects/llm-memory during a fallback
 # verification — refuse that shape unless the caller explicitly forces it.
 if [ -z "$MEMO_PLUGIN_PWD_EXPLICIT" ] && [ "$FORCE" -ne 1 ]; then
   case "$VAULT" in
