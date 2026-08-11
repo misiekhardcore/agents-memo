@@ -95,6 +95,13 @@ interface AgentsMemoConfig {
 
 const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
 const DEFAULT_AUTO_COMPACT_THRESHOLD = 0.85;
+// Threshold for fuzzy-dedup when merging new reflections into existing cores.
+// Higher than the compact threshold's "near-duplicate" bar because we're
+// matching across LLM sessions where wording varies more. Default 0.65: a
+// bullet like "Use async spawn instead of sync subprocess calls" will match
+// "Never block the event loop with sync subprocess calls" (~0.68) but not
+// "Use syntax highlighting to catch incomplete expressions" (~0.15).
+const MERGE_FUZZY_THRESHOLD = 0.65;
 
 const PROJECT_MEMORY_DEFAULTS: ProjectMemoryConfig = {
   enabled: true,
@@ -1263,8 +1270,12 @@ function mergeEntries(
   entries: CoreEntry[],
   incoming: Array<string | { text: string; from?: string[] }>,
   maxItems: number,
+  fuzzyThreshold?: number,
 ): CoreEntry[] {
   const byKey = new Map(entries.map((e) => [normalizeKey(e.text), e]));
+  const unmatched: Array<{ text: string; from?: string[] }> = [];
+
+  // Phase 1: exact dedup via normalizeKey (Porter stemming + stopwords).
   for (const raw of incoming) {
     const item = typeof raw === "string" ? { text: raw } : raw;
     const text = item.text.trim();
@@ -1277,11 +1288,45 @@ function mergeEntries(
         existing.from = [...new Set([...(existing.from ?? []), ...item.from])].sort();
       }
     } else {
-      const entry: CoreEntry = { text, score: 1 };
-      if (item.from?.length) entry.from = [...item.from].sort();
-      byKey.set(key, entry);
+      unmatched.push({ text, from: item.from });
     }
   }
+
+  // Phase 2: fuzzy dedup via Jaccard bigram similarity. Only runs when a
+  // threshold is set and there are unmatched items. At 0.65 this catches
+  // LLM rephrasings of the same concept while staying well above false-
+  // positive territory (different concepts rarely exceed ~0.3).
+  if (fuzzyThreshold !== undefined && unmatched.length > 0) {
+    const existingEntries = [...byKey.values()];
+    for (const item of unmatched) {
+      let bestMatch: CoreEntry | undefined;
+      let bestSim = 0;
+      for (const entry of existingEntries) {
+        const sim = jaccard(item.text, entry.text);
+        if (sim >= fuzzyThreshold && sim > bestSim) {
+          bestSim = sim;
+          bestMatch = entry;
+        }
+      }
+      if (bestMatch) {
+        bestMatch.score += 1;
+        if (item.from?.length) {
+          bestMatch.from = [...new Set([...(bestMatch.from ?? []), ...item.from])].sort();
+        }
+      } else {
+        const entry: CoreEntry = { text: item.text, score: 1 };
+        if (item.from?.length) entry.from = [...item.from].sort();
+        byKey.set(normalizeKey(item.text), entry);
+      }
+    }
+  } else {
+    for (const item of unmatched) {
+      const entry: CoreEntry = { text: item.text, score: 1 };
+      if (item.from?.length) entry.from = [...item.from].sort();
+      byKey.set(normalizeKey(item.text), entry);
+    }
+  }
+
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, maxItems);
 }
 
@@ -1332,8 +1377,8 @@ export function mergeReflection(
   maxItems: number,
 ): ProjectCore {
   return {
-    learnings: mergeEntries(core.learnings, reflection.fixes, maxItems),
-    watchouts: mergeEntries(core.watchouts, reflection.mistakes, maxItems),
+    learnings: mergeEntries(core.learnings, reflection.fixes, maxItems, MERGE_FUZZY_THRESHOLD),
+    watchouts: mergeEntries(core.watchouts, reflection.mistakes, maxItems, MERGE_FUZZY_THRESHOLD),
   };
 }
 
@@ -1474,7 +1519,12 @@ export function updateGlobalCore(
     const read = execObsidianReadSafe(vaultPath, relPath);
     if (!read.ok) return;
     const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
-    const merged = mergeEntries(core.learnings, reflection.global ?? [], maxGlobalItems);
+    const merged = mergeEntries(
+      core.learnings,
+      reflection.global ?? [],
+      maxGlobalItems,
+      MERGE_FUZZY_THRESHOLD,
+    );
     const rendered = renderGlobalCore(
       extractCreatedDate(read.content) ?? dateStr,
       dateStr,
@@ -1505,8 +1555,9 @@ export function updateGlobalCore(
 export function findCrossProjectEntries(
   projects: Record<string, string[]>,
   threshold: number,
+  fuzzyThreshold?: number,
 ): string[] {
-  return collectCrossProjectEntries(projects, threshold).map((e) => e.text);
+  return collectCrossProjectEntries(projects, threshold, fuzzyThreshold).map((e) => e.text);
 }
 
 interface PromotedEntry {
@@ -1517,6 +1568,7 @@ interface PromotedEntry {
 function collectCrossProjectEntries(
   projects: Record<string, string[]>,
   threshold: number,
+  fuzzyThreshold?: number,
 ): PromotedEntry[] {
   const byKey = new Map<string, { text: string; slugs: Set<string> }>();
   for (const [slug, entries] of Object.entries(projects)) {
@@ -1525,8 +1577,29 @@ function collectCrossProjectEntries(
       if (!text) continue;
       const key = normalizeKey(text);
       const rec = byKey.get(key);
-      if (rec) rec.slugs.add(slug);
-      else byKey.set(key, { text, slugs: new Set([slug]) });
+      if (rec) {
+        rec.slugs.add(slug);
+        continue;
+      }
+
+      // Fuzzy match across projects when threshold is set.
+      if (fuzzyThreshold !== undefined) {
+        let bestKey: string | undefined;
+        let bestSim = 0;
+        for (const [existingKey, existing] of byKey) {
+          const sim = jaccard(text, existing.text);
+          if (sim >= fuzzyThreshold && sim > bestSim) {
+            bestSim = sim;
+            bestKey = existingKey;
+          }
+        }
+        if (bestKey) {
+          byKey.get(bestKey)!.slugs.add(slug);
+          continue;
+        }
+      }
+
+      byKey.set(key, { text, slugs: new Set([slug]) });
     }
   }
   return (
@@ -1562,7 +1635,11 @@ export function sweepPromoteGlobal(
       const core = parseCoreFile(read.content);
       if (core.learnings.length > 0) projects[entry.name] = core.learnings.map((e) => e.text);
     }
-    const candidates = collectCrossProjectEntries(projects, promotionThreshold);
+    const candidates = collectCrossProjectEntries(
+      projects,
+      promotionThreshold,
+      MERGE_FUZZY_THRESHOLD,
+    );
     if (candidates.length === 0) return { promoted: 0 };
 
     const relPath = "wiki/global-core.md";
