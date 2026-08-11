@@ -1636,22 +1636,43 @@ export function buildDigest(
   // Page-candidacy nudge counts every global learning at/above the threshold
   // (the store's stable-truth pool, not just the bullets shown in the digest).
   const candidates = globalCore.learnings.filter((e) => e.score >= threshold).length;
-  const header = `[agents-memo memory]\n## Project learnings (${slug})\n## Global learnings`;
   const pointer = `\n\nPage candidates: ${candidates} (score >= ${threshold}) — promote via /save or ask the agent\nFull memory on demand: /query or obsidian search.`;
-  const bullets = [...projTop.map((e) => `- ${e.text}`), ...globalTop.map((e) => `- ${e.text}`)];
 
-  // Truncate to digestBudgetChars at bullet boundaries: drop lowest-ranked
-  // (last) bullets while over budget. If even the header + pointer exceed the
-  // budget, all bullets go but the pointer line is kept.
-  const body = (bs: string[]) => (bs.length > 0 ? `${header}\n${bs.join("\n")}` : header);
-  if (body(bullets).length + pointer.length <= injection.digestBudgetChars) {
-    return body(bullets) + pointer;
+  // Build the full digest string from project and global bullet arrays.
+  // Both sections always get a heading; bullets are placed under their
+  // respective heading so the agent can distinguish project-specific
+  // learnings from cross-project ones.
+  const buildFull = (proj: string[], glob: string[]): string => {
+    const sections: string[] = [];
+    sections.push(
+      proj.length > 0
+        ? `## Project learnings (${slug})\n${proj.join("\n")}`
+        : `## Project learnings (${slug})`,
+    );
+    sections.push(
+      glob.length > 0 ? `## Global learnings\n${glob.join("\n")}` : "## Global learnings",
+    );
+    return `[agents-memo memory]\n${sections.join("\n")}`;
+  };
+
+  // Truncate to digestBudgetChars: drop from global section first (lower
+  // priority), then from project section. Both headings are always rendered
+  // even when their bullet lists are empty after truncation.
+  const proj = projTop.map((e) => `- ${e.text}`);
+  const glob = globalTop.map((e) => `- ${e.text}`);
+  while (
+    glob.length > 0 &&
+    buildFull(proj, glob).length + pointer.length > injection.digestBudgetChars
+  ) {
+    glob.pop();
   }
-  while (bullets.length > 0) {
-    bullets.pop();
-    if (body(bullets).length + pointer.length <= injection.digestBudgetChars) break;
+  while (
+    proj.length > 0 &&
+    buildFull(proj, glob).length + pointer.length > injection.digestBudgetChars
+  ) {
+    proj.pop();
   }
-  return body(bullets) + pointer;
+  return buildFull(proj, glob) + pointer;
 }
 
 function appendDailyReflection(vaultPath: string, label: string): void {
