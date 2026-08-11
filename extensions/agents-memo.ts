@@ -1519,7 +1519,12 @@ export function updateGlobalCore(
     const read = execObsidianReadSafe(vaultPath, relPath);
     if (!read.ok) return;
     const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
-    const merged = mergeEntries(core.learnings, reflection.global ?? [], maxGlobalItems, MERGE_FUZZY_THRESHOLD);
+    const merged = mergeEntries(
+      core.learnings,
+      reflection.global ?? [],
+      maxGlobalItems,
+      MERGE_FUZZY_THRESHOLD,
+    );
     const rendered = renderGlobalCore(
       extractCreatedDate(read.content) ?? dateStr,
       dateStr,
@@ -1572,7 +1577,10 @@ function collectCrossProjectEntries(
       if (!text) continue;
       const key = normalizeKey(text);
       const rec = byKey.get(key);
-      if (rec) { rec.slugs.add(slug); continue; }
+      if (rec) {
+        rec.slugs.add(slug);
+        continue;
+      }
 
       // Fuzzy match across projects when threshold is set.
       if (fuzzyThreshold !== undefined) {
@@ -1627,7 +1635,11 @@ export function sweepPromoteGlobal(
       const core = parseCoreFile(read.content);
       if (core.learnings.length > 0) projects[entry.name] = core.learnings.map((e) => e.text);
     }
-    const candidates = collectCrossProjectEntries(projects, promotionThreshold, MERGE_FUZZY_THRESHOLD);
+    const candidates = collectCrossProjectEntries(
+      projects,
+      promotionThreshold,
+      MERGE_FUZZY_THRESHOLD,
+    );
     if (candidates.length === 0) return { promoted: 0 };
 
     const relPath = "wiki/global-core.md";
