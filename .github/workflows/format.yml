@@ -5,13 +5,10 @@ on:
     branches: [main]
 
 jobs:
-  format:
-    name: Check formatting
-    runs-on: ubuntu-24.04
+  md:
+    name: Markdown formatting
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Run format
-        run: npm run format:check
+      - uses: actions/checkout@v4
+      - run: npm run format:md:check

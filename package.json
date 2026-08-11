@@ -1,41 +1,93 @@
 {
   "name": "agents-memo",
   "version": "2.1.0",
-  "private": true,
+  "description": "Obsidian wiki plugin for pi coding agent — personal knowledge vault with LLM-assisted ingestion, research, and retrieval.",
+  "type": "module",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension",
+    "obsidian",
+    "wiki",
+    "knowledge-base",
+    "memory"
   ],
   "engines": {
     "node": ">=22.19.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/misiekhardcore/agents-memo.git"
+  },
+  "homepage": "https://github.com/misiekhardcore/agents-memo#readme",
+  "bugs": {
+    "url": "https://github.com/misiekhardcore/agents-memo/issues"
+  },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./dist/agents-memo.js",
+      "./dist/agents.js"
     ],
     "skills": [
       "./skills"
     ]
   },
+  "files": [
+    "dist/",
+    "_shared/",
+    "scripts/",
+    "agents/",
+    "skills/",
+    "_templates/",
+    "_seed/",
+    "bin/"
+  ],
   "scripts": {
     "prepare": "husky",
-    "format:check": "bin/minify-md --check",
-    "format:fix": "bin/minify-md --write",
-    "typecheck": "tsc -p tsconfig.json"
+    "build": "tsup",
+    "test": "npm run test:smoke && vitest run",
+    "test:vitest": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:smoke": "node tests/extension-smoke.mjs && bash tests/cli-smoke.sh && bash tests/regression/daily-append.sh && bash tests/regression/read-canvas.sh && bash tests/regression/hot-cache-guard.sh && bash tests/regression/pi-settings-tier.sh && bash tests/regression/prune-lint-guard.sh",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "format": "prettier . --check",
+    "format:fix": "prettier . --write",
+    "format:md:check": "bin/minify-md --check",
+    "format:md:fix": "bin/minify-md --write",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run lint && npm run format && npm run typecheck && npm run test",
+    "fix": "npm run lint:fix && npm run format:fix",
+    "changelog": "git-cliff -o CHANGELOG.md"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "^0.73.1",
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@eslint/js": "10.0.1",
+    "@mariozechner/pi-ai": "^0.73.1",
     "@types/node": "22.19.19",
+    "@vitest/coverage-v8": "4.1.9",
+    "eslint": "10.5.0",
+    "eslint-config-prettier": "10.1.8",
     "git-cliff": "^2.13.1",
     "husky": "^9.1",
     "jiti": "^2.7.0",
     "lint-staged": "^15.5",
-    "typescript": "^5.9.3"
+    "prettier": "3.8.4",
+    "tsup": "^8.0.0",
+    "typebox": "^1.3.12",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "8.61.1",
+    "vitest": "4.1.9"
   },
   "lint-staged": {
+    "*.{ts,js,mjs,cjs,json}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
     "*.md": [
       "bin/minify-md --write"
     ]

@@ -3,11 +3,10 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: Version bump
+      version_bump:
+        description: "Version bump type"
         required: true
         type: choice
-        default: patch
         options:
           - patch
           - minor
@@ -15,92 +14,82 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: node tests/extension-smoke.mjs
+
   release:
+    name: Bump, tag, publish
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure git identity
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Compute next version
+      - name: Bump version
         id: bump
         run: |
-          set -euo pipefail
-          name=$(jq -r '.name' .claude-plugin/plugin.json)
-          current=$(jq -r '.version' .claude-plugin/plugin.json)
-          IFS='.' read -r major minor patch <<<"$current"
-          case "${{ inputs.bump }}" in
-            major) major=$((major+1)); minor=0; patch=0 ;;
-            minor) minor=$((minor+1)); patch=0 ;;
-            patch) patch=$((patch+1)) ;;
-          esac
-          new="${major}.${minor}.${patch}"
-          {
-            echo "name=$name"
-            echo "version=$new"
-            echo "tag=v$new"
-          } >> "$GITHUB_OUTPUT"
+          npm version ${{ inputs.version_bump }} --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Bump plugin.json and marketplace.json
-        run: |
-          set -euo pipefail
-          v="${{ steps.bump.outputs.version }}"
-          tmp=$(mktemp)
-          jq --arg v "$v" '.version = $v' .claude-plugin/plugin.json > "$tmp"
-          mv "$tmp" .claude-plugin/plugin.json
-          jq --arg v "$v" '.metadata.version = $v | .plugins[0].version = $v' .claude-plugin/marketplace.json > "$tmp"
-          mv "$tmp" .claude-plugin/marketplace.json
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --verbose --latest --tag v${{ steps.bump.outputs.new }}
+        env:
+          OUTPUT: CHANGELOG.md
 
-      - name: Install Node dependencies
-        run: |
-          npm ci
+      - name: Build
+        run: npm run build
 
-      - name: Update CHANGELOG
+      - name: Commit and tag
         run: |
-          set -euo pipefail
-          tag="${{ steps.bump.outputs.tag }}"
-          sed -i '/^## \[Unreleased\]/,/^## \[/{/^## \[Unreleased\]/d;/^## \[/!d}' CHANGELOG.md
-          npx git-cliff --tag "$tag" --unreleased --prepend CHANGELOG.md
-
-      - name: Commit, tag, push
-        run: |
-          set -euo pipefail
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json CHANGELOG.md
-          git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
-          git tag -a "${{ steps.bump.outputs.tag }}" -m "${{ steps.bump.outputs.tag }}"
-          git push origin HEAD
-          git push origin "${{ steps.bump.outputs.tag }}"
-
-      - name: Package source tarball
-        run: |
-          set -euo pipefail
-          name="${{ steps.bump.outputs.name }}"
-          version="${{ steps.bump.outputs.version }}"
-          file="${name}-${version}.tar.gz"
-          git archive \
-            --format=tar.gz \
-            --prefix="${name}-${version}/" \
-            -o "$file" \
-            "${{ steps.bump.outputs.tag }}"
-          echo "artifact=$file" >> "$GITHUB_ENV"
-
-      - name: Generate release body
-        run: |
-          set -euo pipefail
-          npx git-cliff --latest --strip header --output /tmp/release-body.md
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore: release v${{ steps.bump.outputs.new }}"
+          git tag "v${{ steps.bump.outputs.new }}"
+          git push origin HEAD:main
+          git push origin "v${{ steps.bump.outputs.new }}"
 
       - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ steps.bump.outputs.tag }}" \
-            --title "${{ steps.bump.outputs.tag }}" \
-            --notes-file /tmp/release-body.md \
-            "$artifact"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.new }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+
+      - name: Setup npm registry
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Publish to npm
+        run: npm publish --access public

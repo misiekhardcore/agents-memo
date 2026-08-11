@@ -176,7 +176,11 @@ const PAGE_CANDIDACY_SPEC: Record<keyof PageCandidacyConfig, NestedKeyValidator>
 // global file win, the project file fills only keys left undefined, and
 // values are type-gated so malformed settings never leak through. Shared by
 // all nested blocks so the merge semantics can never diverge between them.
-function mergeNestedBlock<T extends object>(merged: Partial<T> | undefined, block: unknown, spec: Record<keyof T, NestedKeyValidator>): Partial<T> {
+function mergeNestedBlock<T extends object>(
+  merged: Partial<T> | undefined,
+  block: unknown,
+  spec: Record<keyof T, NestedKeyValidator>,
+): Partial<T> {
   const target: Partial<T> = merged ?? {};
   if (!block || typeof block !== "object") return target;
   for (const key of Object.keys(spec) as Array<keyof T>) {
@@ -204,14 +208,26 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
       const parsed = JSON.parse(readFileSync(f, "utf-8"));
       const block = parsed?.agentsMemo;
       if (!block || typeof block !== "object") continue;
-      if (typeof block.vaultPath === "string" && merged.vaultPath === undefined) merged.vaultPath = block.vaultPath;
-      if ((block.bootstrapReadHot === "always" || block.bootstrapReadHot === "on-demand" || block.bootstrapReadHot === "never") && merged.bootstrapReadHot === undefined) {
+      if (typeof block.vaultPath === "string" && merged.vaultPath === undefined)
+        merged.vaultPath = block.vaultPath;
+      if (
+        (block.bootstrapReadHot === "always" ||
+          block.bootstrapReadHot === "on-demand" ||
+          block.bootstrapReadHot === "never") &&
+        merged.bootstrapReadHot === undefined
+      ) {
         merged.bootstrapReadHot = block.bootstrapReadHot;
       }
-      if ((block.bootstrapReadIndex === "always" || block.bootstrapReadIndex === "on-demand" || block.bootstrapReadIndex === "never") && merged.bootstrapReadIndex === undefined) {
+      if (
+        (block.bootstrapReadIndex === "always" ||
+          block.bootstrapReadIndex === "on-demand" ||
+          block.bootstrapReadIndex === "never") &&
+        merged.bootstrapReadIndex === undefined
+      ) {
         merged.bootstrapReadIndex = block.bootstrapReadIndex;
       }
-      if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined) merged.autoCommit = block.autoCommit;
+      if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined)
+        merged.autoCommit = block.autoCommit;
       if (typeof block.similarityThreshold === "number" && isFinite(block.similarityThreshold) && block.similarityThreshold >= 0 && block.similarityThreshold <= 1 && merged.similarityThreshold === undefined) {
         merged.similarityThreshold = block.similarityThreshold;
       }
@@ -230,12 +246,15 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
   // Defaults for keys the merge left undefined - never overwrite user values.
   merged.projectMemory = {
     enabled: projectMemory.enabled ?? PROJECT_MEMORY_DEFAULTS.enabled,
-    maxLearningsPerReflection: projectMemory.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection,
+    maxLearningsPerReflection:
+      projectMemory.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection,
     maxCoreItems: projectMemory.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems,
     globalEnabled: projectMemory.globalEnabled ?? PROJECT_MEMORY_DEFAULTS.globalEnabled,
     maxGlobalItems: projectMemory.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
-    promotionThreshold: projectMemory.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
-    reflectUntouchedRuns: projectMemory.reflectUntouchedRuns ?? PROJECT_MEMORY_DEFAULTS.reflectUntouchedRuns,
+    promotionThreshold:
+      projectMemory.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
+    reflectUntouchedRuns:
+      projectMemory.reflectUntouchedRuns ?? PROJECT_MEMORY_DEFAULTS.reflectUntouchedRuns,
   };
   merged.reflectModel = {
     provider: reflectModel.provider ?? REFLECT_MODEL_DEFAULTS.provider,
@@ -243,8 +262,10 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
   };
   merged.memoryInjection = {
     sessionStart: memoryInjection.sessionStart ?? DEFAULT_MEMORY_INJECTION.sessionStart,
-    reInjectOnCompact: memoryInjection.reInjectOnCompact ?? DEFAULT_MEMORY_INJECTION.reInjectOnCompact,
-    digestBudgetChars: memoryInjection.digestBudgetChars ?? DEFAULT_MEMORY_INJECTION.digestBudgetChars,
+    reInjectOnCompact:
+      memoryInjection.reInjectOnCompact ?? DEFAULT_MEMORY_INJECTION.reInjectOnCompact,
+    digestBudgetChars:
+      memoryInjection.digestBudgetChars ?? DEFAULT_MEMORY_INJECTION.digestBudgetChars,
     projectCoreTop: memoryInjection.projectCoreTop ?? DEFAULT_MEMORY_INJECTION.projectCoreTop,
     globalCoreTop: memoryInjection.globalCoreTop ?? DEFAULT_MEMORY_INJECTION.globalCoreTop,
   };
@@ -266,7 +287,12 @@ function expandTilde(p: string): string {
 // (spaces, underscores, dots, ...) collapses to a single hyphen; edge hyphens
 // trimmed; never empty ("unknown").
 function sanitizeSlug(raw: string): string {
-  return raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+  return (
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "unknown"
+  );
 }
 
 // Exported for the smoke test.
@@ -314,15 +340,17 @@ function ensureProjectDir(vaultPath: string, slug: string): void {
 // newlines in the vault file. Real newlines are converted to \n so multi-line
 // content survives as a single shell argument.
 function escapeShellContent(text: string): string {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    // $ and backticks are live in double-quoted shell args (command
-    // substitution): model-generated reflection text must never reach the
-    // shell unescaped (verified: $(echo PWNED) executes without these).
-    .replace(/\$/g, "\\$")
-    .replace(/`/g, "\\`")
-    .replace(/\r?\n/g, "\\n");
+  return (
+    text
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      // $ and backticks are live in double-quoted shell args (command
+      // substitution): model-generated reflection text must never reach the
+      // shell unescaped (verified: $(echo PWNED) executes without these).
+      .replace(/\$/g, "\\$")
+      .replace(/`/g, "\\`")
+      .replace(/\r?\n/g, "\\n")
+  );
 }
 
 // Parity with resolve-vault.sh tiers 3/4: Claude Code settings fall back after
@@ -334,7 +362,10 @@ function escapeShellContent(text: string): string {
 // the whole file on its first matching entry. Exported for the smoke test (pi
 // only invokes the default export).
 export function readClaudeVaultPath(): string | null {
-  for (const f of [join(homedir(), ".claude", "settings.local.json"), join(homedir(), ".claude", "settings.json")]) {
+  for (const f of [
+    join(homedir(), ".claude", "settings.local.json"),
+    join(homedir(), ".claude", "settings.json"),
+  ]) {
     try {
       const parsed = JSON.parse(readFileSync(f, "utf-8"));
       const pluginConfigs = parsed?.pluginConfigs;
@@ -485,7 +516,11 @@ function realpathOrResolve(p: string): string {
 // matching block-direct-vault-io.sh whose `"$VAULT"/*` literal-prefix checks
 // never match the root. One realpath walk per side serves both the block
 // decision and the bypass-allowlist rel path.
-function vaultContainedPair(filePath: string, vaultPath: string, resolveFrom?: string): { abs: string; vaultAbs: string } | null {
+function vaultContainedPair(
+  filePath: string,
+  vaultPath: string,
+  resolveFrom?: string,
+): { abs: string; vaultAbs: string } | null {
   const abs = realpathOrResolve(resolve(resolveFrom ?? process.cwd(), filePath));
   const vaultAbs = realpathOrResolve(resolve(vaultPath));
   const prefix = vaultAbs.endsWith("/") ? vaultAbs : vaultAbs + "/";
@@ -496,7 +531,8 @@ function vaultContainedPair(filePath: string, vaultPath: string, resolveFrom?: s
 // Write-verb class mirrors hooks/log-obsidian-calls.sh's auto-commit verbs
 // (create, append, prepend, create-or-append, property:set, property:remove,
 // eval) plus `overwrite` (a create flag; harmless to over-match).
-const WRITE_VERB_RE = /\b(create|create-or-append|append|prepend|overwrite|property:set|property:remove|eval)\b/;
+const WRITE_VERB_RE =
+  /\b(create|create-or-append|append|prepend|overwrite|property:set|property:remove|eval)\b/;
 
 // Extract the obsidian verb positionally, mirroring log-obsidian-calls.sh's
 // VERB extraction: for routed commands the first token AFTER the LAST wrapper
@@ -518,7 +554,7 @@ function extractVerb(cmd: string): string | null {
       return tokens[i + 1];
     }
   }
-  let idx = stripEnvPrefix(tokens);
+  const idx = stripEnvPrefix(tokens);
   if (tokens[idx] === "obsidian") return tokens[idx + 1] ?? null;
   return null;
 }
@@ -611,10 +647,13 @@ function serializeMessages(messages: ReflectionMessage[]): string {
     if (typeof msg.content === "string") {
       text = msg.content;
     } else if (Array.isArray(msg.content)) {
-      text = (msg.content as Array<{ type?: string; text?: string; name?: string; arguments?: unknown }>)
+      text = (
+        msg.content as Array<{ type?: string; text?: string; name?: string; arguments?: unknown }>
+      )
         .map((part) => {
           if (part?.type === "text") return part.text ?? "";
-          if (part?.type === "toolCall") return `[tool_call ${part.name}] ${JSON.stringify(part.arguments)}`;
+          if (part?.type === "toolCall")
+            return `[tool_call ${part.name}] ${JSON.stringify(part.arguments)}`;
           return "";
         })
         .filter(Boolean)
@@ -662,10 +701,20 @@ export function buildReflectionSystemPrompt(maxItems: number): string {
 export function parseReflectionJson(text: string): Reflection | null {
   const parse = (candidate: string): Reflection | null => {
     try {
-      const parsed = JSON.parse(candidate) as { mistakes?: unknown; fixes?: unknown; global?: unknown };
-      const mistakes = Array.isArray(parsed.mistakes) ? parsed.mistakes.filter((m): m is string => typeof m === "string") : [];
-      const fixes = Array.isArray(parsed.fixes) ? parsed.fixes.filter((m): m is string => typeof m === "string") : [];
-      const global = Array.isArray(parsed.global) ? parsed.global.filter((m): m is string => typeof m === "string") : [];
+      const parsed = JSON.parse(candidate) as {
+        mistakes?: unknown;
+        fixes?: unknown;
+        global?: unknown;
+      };
+      const mistakes = Array.isArray(parsed.mistakes)
+        ? parsed.mistakes.filter((m): m is string => typeof m === "string")
+        : [];
+      const fixes = Array.isArray(parsed.fixes)
+        ? parsed.fixes.filter((m): m is string => typeof m === "string")
+        : [];
+      const global = Array.isArray(parsed.global)
+        ? parsed.global.filter((m): m is string => typeof m === "string")
+        : [];
       // Valid when any bucket is non-empty: a global-only reflection (pure
       // reusable learnings, nothing went wrong) is a legitimate outcome.
       if (mistakes.length === 0 && fixes.length === 0 && global.length === 0) return null;
@@ -688,7 +737,12 @@ export function parseReflectionJson(text: string): Reflection | null {
 
 // Bounded race: rejects after ms (aborting the controller, if given) so a
 // hung model call can never block the session. Exported for the smoke test.
-export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string, controller?: AbortController): Promise<T> {
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  controller?: AbortController,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -708,12 +762,17 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 const REFLECTION_MODEL_TIMEOUT_MS = 60_000;
 const REFLECTION_MAX_TOKENS = 900;
 
-type RequestAuth = { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
+type RequestAuth =
+  | { ok: true; apiKey?: string; headers?: Record<string, string> }
+  | { ok: false; error: string };
 
 // Resolve the reflection model + request auth: configured reflectModel first
 // (via the session's model registry, with a getModel fallback), then the
 // session's current model. Best-effort — null skips the reflection silently.
-async function pickReflectionModel(config: AgentsMemoConfig, ctx: ExtensionContext): Promise<{
+async function pickReflectionModel(
+  config: AgentsMemoConfig,
+  ctx: ExtensionContext,
+): Promise<{
   model: Model<Api>;
   apiKey?: string;
   headers?: Record<string, string>;
@@ -727,7 +786,10 @@ async function pickReflectionModel(config: AgentsMemoConfig, ctx: ExtensionConte
     registry.find?.(provider, id) ??
     (getModel as unknown as (p: string, i: string) => Model<Api> | undefined)(provider, id);
   const candidates = [findModel(wanted.provider, wanted.id), ctx.model].filter(
-    (m): m is Model<Api> => !!m && typeof (m as { provider?: unknown }).provider === "string" && typeof (m as { id?: unknown }).id === "string",
+    (m): m is Model<Api> =>
+      !!m &&
+      typeof (m as { provider?: unknown }).provider === "string" &&
+      typeof (m as { id?: unknown }).id === "string",
   );
   for (const model of candidates) {
     try {
@@ -745,19 +807,34 @@ async function pickReflectionModel(config: AgentsMemoConfig, ctx: ExtensionConte
 // can never freeze the session (the pre-fix spawned subprocess froze the
 // event loop for up to 60s and could hang indefinitely). Best-effort: any
 // failure yields null and the caller silently skips.
-async function runReflection(config: AgentsMemoConfig, ctx: ExtensionContext, messages: ReflectionMessage[]): Promise<Reflection | null> {
+async function runReflection(
+  config: AgentsMemoConfig,
+  ctx: ExtensionContext,
+  messages: ReflectionMessage[],
+): Promise<Reflection | null> {
   try {
     const picked = await pickReflectionModel(config, ctx);
     if (!picked) return null;
-    const maxItems = config.projectMemory?.maxLearningsPerReflection ?? PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection;
+    const maxItems =
+      config.projectMemory?.maxLearningsPerReflection ??
+      PROJECT_MEMORY_DEFAULTS.maxLearningsPerReflection;
     const conversation = serializeMessages(messages);
     const prompt = `${buildReflectionSystemPrompt(maxItems)}\n\n<conversation>\n${conversation}\n</conversation>`;
     const controller = new AbortController();
     const response = await withTimeout(
       complete(
         picked.model,
-        { messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
-        { apiKey: picked.apiKey, headers: picked.headers, maxTokens: REFLECTION_MAX_TOKENS, signal: controller.signal },
+        {
+          messages: [
+            { role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() },
+          ],
+        },
+        {
+          apiKey: picked.apiKey,
+          headers: picked.headers,
+          maxTokens: REFLECTION_MAX_TOKENS,
+          signal: controller.signal,
+        },
       ),
       REFLECTION_MODEL_TIMEOUT_MS,
       "reflection model call",
@@ -785,15 +862,19 @@ function appendProjectDailyEntry(
     ensureProjectDir(vaultPath, slug);
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
     const template =
-      "---\\ntype: project-daily\\nproject: " + slug +
-      "\\ndate: " + dateStr + "\\ncreated: " + dateStr + "\\nupdated: " + dateStr +
+      "---\\ntype: project-daily\\nproject: " +
+      slug +
+      "\\ndate: " +
+      dateStr +
+      "\\ncreated: " +
+      dateStr +
+      "\\nupdated: " +
+      dateStr +
       "\\n---\\n\\n## Reflections\\n";
     const mistakes = reflection.mistakes.map((m) => `- ${m}`).join("\\n") || "- (none)";
     const fixes = reflection.fixes.map((f) => `- ${f}`).join("\\n") || "- (none)";
     const content =
-      `## ${timeStr} Reflection\\n` +
-      `### Mistakes\\n${mistakes}\\n` +
-      `### Fixes\\n${fixes}\\n`;
+      `## ${timeStr} Reflection\\n` + `### Mistakes\\n${mistakes}\\n` + `### Fixes\\n${fixes}\\n`;
     execSync(
       `bash "${obsCli}" create-or-append ` +
         `file=${projectDailyRel(slug, dateStr)} ` +
@@ -1067,7 +1148,8 @@ export function parseCoreFile(text: string): ProjectCore {
         score = parseInt(scoreM[1], 10) || 1;
         body = body.slice(0, scoreM.index).trimEnd();
       }
-      if (section === "watchouts" && body.startsWith("Avoid: ")) body = body.slice("Avoid: ".length).trim();
+      if (section === "watchouts" && body.startsWith("Avoid: "))
+        body = body.slice("Avoid: ".length).trim();
       if (!body || body === "(none yet)") continue;
       const entry: CoreEntry = { text: body, score };
       if (from?.length) entry.from = from;
@@ -1082,7 +1164,11 @@ export function parseCoreFile(text: string): ProjectCore {
 // new entries start at 1. Sorted by score desc (stable for ties), capped at
 // maxItems. Shared by the project and global cores and the promotion sweep so
 // the dedup/score/cap semantics can never diverge between them.
-function mergeEntries(entries: CoreEntry[], incoming: Array<string | { text: string; from?: string[] }>, maxItems: number): CoreEntry[] {
+function mergeEntries(
+  entries: CoreEntry[],
+  incoming: Array<string | { text: string; from?: string[] }>,
+  maxItems: number,
+): CoreEntry[] {
   const byKey = new Map(entries.map((e) => [normalizeKey(e.text), e]));
   for (const raw of incoming) {
     const item = typeof raw === "string" ? { text: raw } : raw;
@@ -1145,7 +1231,11 @@ export function applyMerges(entries: CoreEntry[], pairs: MergePair[]): CoreEntry
 // watch-outs (rendered with an "Avoid: " prefix). Existing entries get score+1
 // on a normalized-text hit; new entries start at 1. Sorted by score desc,
 // capped at maxItems. No age-based decay (non-goal: simple cap + recency).
-export function mergeReflection(core: ProjectCore, reflection: Reflection, maxItems: number): ProjectCore {
+export function mergeReflection(
+  core: ProjectCore,
+  reflection: Reflection,
+  maxItems: number,
+): ProjectCore {
   return {
     learnings: mergeEntries(core.learnings, reflection.fixes, maxItems),
     watchouts: mergeEntries(core.watchouts, reflection.mistakes, maxItems),
@@ -1155,7 +1245,9 @@ export function mergeReflection(core: ProjectCore, reflection: Reflection, maxIt
 export function renderCoreFile(slug: string, dateStr: string, core: ProjectCore): string {
   const renderSection = (title: string, entries: CoreEntry[], isWatchout: boolean): string => {
     if (entries.length === 0) return `## ${title}\n- (none yet)\n`;
-    const bullets = entries.map((e) => `- ${isWatchout ? "Avoid: " : ""}${e.text}<!--score:${e.score}-->`);
+    const bullets = entries.map(
+      (e) => `- ${isWatchout ? "Avoid: " : ""}${e.text}<!--score:${e.score}-->`,
+    );
     return `## ${title}\n${bullets.join("\n")}\n`;
   };
   return (
@@ -1247,7 +1339,12 @@ function extractCreatedDate(content: string): string | undefined {
   return m?.[1];
 }
 
-export function renderGlobalCore(createdDate: string, updatedDate: string, learnings: CoreEntry[], candidacyThreshold: number): string {
+export function renderGlobalCore(
+  createdDate: string,
+  updatedDate: string,
+  learnings: CoreEntry[],
+  candidacyThreshold: number,
+): string {
   const renderSection = (entries: CoreEntry[]): string => {
     if (entries.length === 0) return `## High-value learnings\n- (none yet)\n`;
     const bullets = entries.map((e) => {
@@ -1284,7 +1381,12 @@ export function updateGlobalCore(
     if (!read.ok) return;
     const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
     const merged = mergeEntries(core.learnings, reflection.global ?? [], maxGlobalItems);
-    const rendered = renderGlobalCore(extractCreatedDate(read.content) ?? dateStr, dateStr, merged, candidacyThreshold);
+    const rendered = renderGlobalCore(
+      extractCreatedDate(read.content) ?? dateStr,
+      dateStr,
+      merged,
+      candidacyThreshold,
+    );
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
     execSync(
       `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
@@ -1306,7 +1408,10 @@ export function updateGlobalCore(
 // occurrences per project: a text repeated twice in ONE project still counts
 // once, so the threshold measures spread, not volume.
 
-export function findCrossProjectEntries(projects: Record<string, string[]>, threshold: number): string[] {
+export function findCrossProjectEntries(
+  projects: Record<string, string[]>,
+  threshold: number,
+): string[] {
   return collectCrossProjectEntries(projects, threshold).map((e) => e.text);
 }
 
@@ -1315,7 +1420,10 @@ interface PromotedEntry {
   slugs: string[];
 }
 
-function collectCrossProjectEntries(projects: Record<string, string[]>, threshold: number): PromotedEntry[] {
+function collectCrossProjectEntries(
+  projects: Record<string, string[]>,
+  threshold: number,
+): PromotedEntry[] {
   const byKey = new Map<string, { text: string; slugs: Set<string> }>();
   for (const [slug, entries] of Object.entries(projects)) {
     for (const raw of entries) {
@@ -1327,11 +1435,13 @@ function collectCrossProjectEntries(projects: Record<string, string[]>, threshol
       else byKey.set(key, { text, slugs: new Set([slug]) });
     }
   }
-  return [...byKey.values()]
-    .filter((rec) => rec.slugs.size >= threshold)
-    // Deterministic order: most-spread first, then text.
-    .sort((a, b) => b.slugs.size - a.slugs.size || a.text.localeCompare(b.text))
-    .map((rec) => ({ text: rec.text, slugs: [...rec.slugs].sort() }));
+  return (
+    [...byKey.values()]
+      .filter((rec) => rec.slugs.size >= threshold)
+      // Deterministic order: most-spread first, then text.
+      .sort((a, b) => b.slugs.size - a.slugs.size || a.text.localeCompare(b.text))
+      .map((rec) => ({ text: rec.text, slugs: [...rec.slugs].sort() }))
+  );
 }
 
 // Scan wiki/projects/*/core.md (readdir = real fs; core reads go through the
@@ -1364,7 +1474,9 @@ export function sweepPromoteGlobal(
     const relPath = "wiki/global-core.md";
     const existing = execObsidianReadSafe(vaultPath, relPath);
     if (!existing.ok) return { promoted: 0 };
-    const core = existing.content ? parseCoreFile(existing.content) : { learnings: [], watchouts: [] };
+    const core = existing.content
+      ? parseCoreFile(existing.content)
+      : { learnings: [], watchouts: [] };
     // Skip entries whose source projects are already fully covered by the
     // existing provenance — a re-run then leaves the store byte-identical
     // instead of inflating scores.
@@ -1378,7 +1490,12 @@ export function sweepPromoteGlobal(
     if (incoming.length === 0) return { promoted: 0 };
 
     const merged = mergeEntries(core.learnings, incoming, maxGlobalItems);
-    const rendered = renderGlobalCore(extractCreatedDate(existing.content) ?? new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10), merged, DEFAULT_PAGE_CANDIDACY.threshold);
+    const rendered = renderGlobalCore(
+      extractCreatedDate(existing.content) ?? new Date().toISOString().slice(0, 10),
+      new Date().toISOString().slice(0, 10),
+      merged,
+      DEFAULT_PAGE_CANDIDACY.threshold,
+    );
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
     execSync(
       `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
@@ -1400,17 +1517,24 @@ export function sweepPromoteGlobal(
 // side, not the whole digest) — the digest is read-only so there is no
 // clobber risk, unlike updateGlobalCore's write pipeline.
 // Exported for the smoke test (pi only invokes the default export).
-export function buildDigest(vaultPath: string, slug: string, config: AgentsMemoConfig): string | null {
+export function buildDigest(
+  vaultPath: string,
+  slug: string,
+  config: AgentsMemoConfig,
+): string | null {
   const injection = config.memoryInjection ?? DEFAULT_MEMORY_INJECTION;
   const threshold = config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold;
 
   const projRead = execObsidianReadSafe(vaultPath, projectCoreRel(slug));
   const globalRead = execObsidianReadSafe(vaultPath, "wiki/global-core.md");
   const projCore = projRead.ok ? parseCoreFile(projRead.content) : { learnings: [], watchouts: [] };
-  const globalCore = globalRead.ok ? parseCoreFile(globalRead.content) : { learnings: [], watchouts: [] };
+  const globalCore = globalRead.ok
+    ? parseCoreFile(globalRead.content)
+    : { learnings: [], watchouts: [] };
   // Stable score-desc sort before slicing: cores are stored score-sorted, but
   // hand-edited files must still yield the top entries deterministically.
-  const byScore = (entries: CoreEntry[]): CoreEntry[] => [...entries].sort((a, b) => b.score - a.score);
+  const byScore = (entries: CoreEntry[]): CoreEntry[] =>
+    [...entries].sort((a, b) => b.score - a.score);
   const projTop = byScore(projCore.learnings).slice(0, injection.projectCoreTop);
   const globalTop = byScore(globalCore.learnings).slice(0, injection.globalCoreTop);
   if (projTop.length === 0 && globalTop.length === 0) return null;
@@ -1443,8 +1567,12 @@ function appendDailyReflection(vaultPath: string, label: string): void {
   try {
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
     const template =
-      "---\\ntype: daily\\ndate: " + dateStr +
-      "\\ncreated: " + dateStr + "\\nupdated: " + dateStr +
+      "---\\ntype: daily\\ndate: " +
+      dateStr +
+      "\\ncreated: " +
+      dateStr +
+      "\\nupdated: " +
+      dateStr +
       "\\n---\\n\\n## Captures\\n";
     execSync(
       `bash "${obsCli}" create-or-append ` +
@@ -1488,10 +1616,7 @@ export default function (pi: ExtensionAPI) {
       // Leading whitespace is horizontal-only ([ \t]*) and there is no /m
       // flag, so heredoc / multi-line bodies are never rewritten (parity with
       // the bash hook's line-1-scoped `sed '1 s~^([[:space:]]*)obsidian...'`).
-      cmd = cmd.replace(
-        /^([ \t]*)obsidian(\s+|$)/,
-        `$1"${pluginRoot}/scripts/obsidian-cli.sh"$2`,
-      );
+      cmd = cmd.replace(/^([ \t]*)obsidian(\s+|$)/, `$1"${pluginRoot}/scripts/obsidian-cli.sh"$2`);
 
       event.input.command = cmd;
       bashCommands.set(event.toolCallId, cmd);
@@ -1505,7 +1630,8 @@ export default function (pi: ExtensionAPI) {
       // reflection. Write-verb parity with hooks/log-obsidian-calls.sh: the
       // verb is extracted positionally (first token after the last wrapper),
       // so `obsidian read ... | grep append` does not count as a write.
-      const mentionsVault = isObsidianRouted(cmd) || (vaultPath !== null && cmd.includes(vaultPath));
+      const mentionsVault =
+        isObsidianRouted(cmd) || (vaultPath !== null && cmd.includes(vaultPath));
       if (mentionsVault) {
         const verb = extractVerb(cmd);
         if (verb !== null && WRITE_VERB_RE.test(verb)) {
@@ -1516,8 +1642,11 @@ export default function (pi: ExtensionAPI) {
     }
 
     // AC12: block direct file I/O on vault paths (bypass allowlist applies).
-    if (vaultPath !== null && (event.toolName === "read" || event.toolName === "write" || event.toolName === "edit")) {
-      const raw = (event.input as { file_path?: string; path?: string });
+    if (
+      vaultPath !== null &&
+      (event.toolName === "read" || event.toolName === "write" || event.toolName === "edit")
+    ) {
+      const raw = event.input as { file_path?: string; path?: string };
       const filePath = String(raw.file_path ?? raw.path ?? "");
       if (filePath) {
         const pair = vaultContainedPair(filePath, vaultPath, ctx.cwd);
@@ -1530,8 +1659,8 @@ export default function (pi: ExtensionAPI) {
           if (!isVaultBypassed(rel, event.toolName)) {
             const verbMap: Record<string, string> = {
               read: "obsidian read path=<file>",
-              write: "obsidian create path=<file> content=\"...\"",
-              edit: "obsidian create path=<file> overwrite=true content=\"...\" (full content replacement)",
+              write: 'obsidian create path=<file> content="..."',
+              edit: 'obsidian create path=<file> overwrite=true content="..." (full content replacement)',
             };
             return {
               block: true,
@@ -1564,7 +1693,9 @@ export default function (pi: ExtensionAPI) {
     // All handlers of one emit complete within the current task; flip the
     // latch only after the emit finishes so INIT + hot + index all inject on
     // the first prompt.
-    setImmediate(() => { bootstrapServed = true; });
+    setImmediate(() => {
+      bootstrapServed = true;
+    });
     return true;
   };
 
@@ -1657,7 +1788,11 @@ export default function (pi: ExtensionAPI) {
       const hot = execObsidianRead(vaultPath, "wiki/hot.md");
       if (hot) {
         pi.sendMessage(
-          { customType: "agents-memo-hot", content: `[agents-memo: wiki/hot.md]\n${hot}`, display: false },
+          {
+            customType: "agents-memo-hot",
+            content: `[agents-memo: wiki/hot.md]\n${hot}`,
+            display: false,
+          },
           { triggerTurn: false },
         );
       }
@@ -1666,7 +1801,11 @@ export default function (pi: ExtensionAPI) {
       const index = execObsidianRead(vaultPath, "wiki/index.md");
       if (index) {
         pi.sendMessage(
-          { customType: "agents-memo-index", content: `[agents-memo: wiki/index.md]\n${index}`, display: false },
+          {
+            customType: "agents-memo-index",
+            content: `[agents-memo: wiki/index.md]\n${index}`,
+            display: false,
+          },
           { triggerTurn: false },
         );
       }
@@ -1674,7 +1813,11 @@ export default function (pi: ExtensionAPI) {
     // Digest re-injection uses the slug cached at before_agent_start, never
     // process.cwd() (which may have changed by compaction time), and only
     // when the session actually resolved a vault + slug.
-    if (config.memoryInjection?.reInjectOnCompact !== false && config.projectMemory?.enabled !== false && lastProjectSlug) {
+    if (
+      config.memoryInjection?.reInjectOnCompact !== false &&
+      config.projectMemory?.enabled !== false &&
+      lastProjectSlug
+    ) {
       const digest = buildDigest(vaultPath, lastProjectSlug, config);
       if (digest) {
         pi.sendMessage(
@@ -1709,10 +1852,14 @@ export default function (pi: ExtensionAPI) {
         try {
           // spawnSync (no shell interpolation of the config-controlled vault
           // path) resets index AND worktree via checkout HEAD --.
-          const result = spawnSync("git", ["-C", vaultPath, "checkout", "HEAD", "--", "wiki/hot.md"], {
-            encoding: "utf-8",
-            timeout: 5000,
-          });
+          const result = spawnSync(
+            "git",
+            ["-C", vaultPath, "checkout", "HEAD", "--", "wiki/hot.md"],
+            {
+              encoding: "utf-8",
+              timeout: 5000,
+            },
+          );
           // HEAD itself may contain the empty blob (corruption already
           // committed) - treat that as not-restorable.
           restored = result.status === 0 && existsSync(hotPath) && statSync(hotPath).size > 0;
@@ -1760,7 +1907,15 @@ export default function (pi: ExtensionAPI) {
       // Status gate scoped to the paths git add stages — Obsidian's own
       // .obsidian/* churn (workspace.json, types.json) would otherwise keep
       // the whole-repo gate permanently open and fire false notifications.
-      const status = await pi.exec("git", ["-C", vaultPath, "status", "--porcelain", "--", "wiki/", ".raw/"]);
+      const status = await pi.exec("git", [
+        "-C",
+        vaultPath,
+        "status",
+        "--porcelain",
+        "--",
+        "wiki/",
+        ".raw/",
+      ]);
       if (status.code !== 0 || status.stdout.trim().length === 0) return;
       // pi.exec resolves with {code} on failure (never throws): "nothing to
       // commit" exits 1, so gate the notify on the actual commit result and
@@ -1768,7 +1923,13 @@ export default function (pi: ExtensionAPI) {
       // `git diff --cached --quiet` gating.
       const add = await pi.exec("git", ["-C", vaultPath, "add", "wiki/", ".raw/"]);
       if (add.code !== 0) return;
-      const commit = await pi.exec("git", ["-C", vaultPath, "commit", "-m", "auto: vault changes [agents-memo]"]);
+      const commit = await pi.exec("git", [
+        "-C",
+        vaultPath,
+        "commit",
+        "-m",
+        "auto: vault changes [agents-memo]",
+      ]);
       if (commit.code !== 0) return;
       if (ctx.hasUI) {
         ctx.ui.notify("Wiki updated - changes auto-committed", "info");
@@ -1792,7 +1953,8 @@ export default function (pi: ExtensionAPI) {
       // Legacy path: static global daily marker (sessions that opted out of
       // per-project pages keep the old behavior unchanged). Stays
       // touched-gated — untouched runs never write the legacy marker.
-      if (touched) appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
+      if (touched)
+        appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
       return;
     }
     // Untouched runs reflect only when reflectUntouchedRuns is on (default
@@ -1817,7 +1979,13 @@ export default function (pi: ExtensionAPI) {
       const reflection = await runReflection(config, ctx, messages.slice(-8));
       if (!reflection) return;
       appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
-      updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems);
+      updateProjectCore(
+        vaultPath,
+        slug,
+        dateStr,
+        reflection,
+        config.projectMemory?.maxCoreItems ?? PROJECT_MEMORY_DEFAULTS.maxCoreItems,
+      );
       // Global bucket: cross-project learnings land in wiki/global-core.md
       // (skipped when the global store is disabled; empty-bucket reflections
       // are a no-op merge over whatever the store already holds).
@@ -1840,7 +2008,8 @@ export default function (pi: ExtensionAPI) {
   // >= promotionThreshold project cores move into wiki/global-core.md with a
   // provenance marker. On-demand counterpart of the session_shutdown trigger.
   pi.registerCommand("wiki promote-global", {
-    description: "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
+    description:
+      "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
     handler: async (_args, ctx) => {
       const vaultPath = getVaultPath(ctx.cwd);
       const config = readPiSettings(ctx.cwd);
@@ -1849,7 +2018,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (config.projectMemory?.globalEnabled === false) {
-        if (ctx.hasUI) ctx.ui.notify("agents-memo: global memory is disabled (projectMemory.globalEnabled=false)", "error");
+        if (ctx.hasUI)
+          ctx.ui.notify(
+            "agents-memo: global memory is disabled (projectMemory.globalEnabled=false)",
+            "error",
+          );
         return;
       }
       const result = sweepPromoteGlobal(

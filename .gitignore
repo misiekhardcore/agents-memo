@@ -1,5 +1,9 @@
 .worktrees/
 node_modules/
+dist/
+coverage/
 NOTES.md
 .pi
 .forge/
+*.log
+.DS_Store

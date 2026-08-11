@@ -1,6 +1,6 @@
 # agents-memo
 
-Agent + user instructions for the agents-memo plugin.
+Agent + user instructions for the agents-memo package (pi extension + Claude Code plugin).
 
 ## Vault Assumptions
 
@@ -12,7 +12,7 @@ This vault is designed for **agent-only** use with **single-user, single-machine
 
 ## Plugin Setup
 
-1. Set `agents-memo.vault_path` (or Claude checks CWD for `wiki/` folder).
+1. Set `vaultPath` in pi settings (`~/.pi/agent/settings.json`) or `vault_path` in Claude Code settings — or the runtime auto-discovers a `wiki/` folder in CWD.
 2. Run `/wiki init` to bootstrap vault structure.
 
 ## Vault Structure

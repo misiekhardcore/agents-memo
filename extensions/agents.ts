@@ -59,8 +59,16 @@ const TOOL_NAME_MAP: Record<string, string> = {
 // survive the final filter instead of being silently dropped, and so
 // research-round can dispatch source-synth agents via memo_dispatch.
 const KNOWN_TOOLS = [
-  "bash", "read", "write", "edit", "ls", "grep", "find",
-  "web_fetch", "web_search", "memo_dispatch",
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "ls",
+  "grep",
+  "find",
+  "web_fetch",
+  "web_search",
+  "memo_dispatch",
 ];
 
 const MODEL_MAP: Record<string, string> = {
@@ -102,7 +110,9 @@ function parseFrontmatter(content: string): { frontmatter: Frontmatter; body: st
 function toList(value: string | string[] | number | boolean | undefined): string[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) return value.map(String);
-  return String(value).split(/[\s,]+/).filter(Boolean);
+  return String(value)
+    .split(/[\s,]+/)
+    .filter(Boolean);
 }
 
 export function buildToolAllowlist(fm: Frontmatter): string[] {
@@ -261,7 +271,14 @@ function runPiSubprocess(
       });
     });
     child.on("error", () => {
-      resolvePromise({ agent: "", task: "", exitCode: 1, output: "", stderr: "failed to spawn pi", step: undefined });
+      resolvePromise({
+        agent: "",
+        task: "",
+        exitCode: 1,
+        output: "",
+        stderr: "failed to spawn pi",
+        step: undefined,
+      });
     });
 
     if (signal) {
@@ -310,24 +327,36 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
     // request once the tool is registered. Mode is inferred in execute() from
     // which fields are present; `mode` is an optional hint for the model.
     parameters: Type.Object({
-      mode: Type.Optional(Type.Union([Type.Literal("single"), Type.Literal("parallel"), Type.Literal("chain")], { description: "Execution mode (informational; inferred from the fields provided)" })),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("single"), Type.Literal("parallel"), Type.Literal("chain")], {
+          description: "Execution mode (informational; inferred from the fields provided)",
+        }),
+      ),
       agent: Type.Optional(Type.String({ description: "Agent name to run (single mode)" })),
       task: Type.Optional(Type.String({ description: "Task to delegate (single mode)" })),
-      tasks: Type.Optional(Type.Array(
-        Type.Object({
-          agent: Type.String({ description: "Agent name" }),
-          task: Type.String({ description: "Task for this agent" }),
-        }),
-        { description: "Tasks to run in parallel" },
-      )),
-      chain: Type.Optional(Type.Array(
-        Type.Object({
-          agent: Type.String({ description: "Agent name" }),
-          task: Type.String({ description: "Task; {previous} is replaced with the prior step's output" }),
-        }),
-        { description: "Sequential steps; each step's output feeds the next via {previous}" },
-      )),
-      cwd: Type.Optional(Type.String({ description: "Working directory (defaults to session cwd)" })),
+      tasks: Type.Optional(
+        Type.Array(
+          Type.Object({
+            agent: Type.String({ description: "Agent name" }),
+            task: Type.String({ description: "Task for this agent" }),
+          }),
+          { description: "Tasks to run in parallel" },
+        ),
+      ),
+      chain: Type.Optional(
+        Type.Array(
+          Type.Object({
+            agent: Type.String({ description: "Agent name" }),
+            task: Type.String({
+              description: "Task; {previous} is replaced with the prior step's output",
+            }),
+          }),
+          { description: "Sequential steps; each step's output feeds the next via {previous}" },
+        ),
+      ),
+      cwd: Type.Optional(
+        Type.String({ description: "Working directory (defaults to session cwd)" }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<unknown>> {
       const cwd = "cwd" in params && typeof params.cwd === "string" ? params.cwd : ctx.cwd;
@@ -385,7 +414,12 @@ export function registerMemoDispatchTool(pi: ExtensionAPI): void {
         // Flat optional schema can validate an empty call - fail clearly
         // instead of crashing on undefined .length below.
         return {
-          content: [{ type: "text", text: "memo_dispatch: no recognized mode - provide agent+task, tasks[], or chain[]" }],
+          content: [
+            {
+              type: "text",
+              text: "memo_dispatch: no recognized mode - provide agent+task, tasks[], or chain[]",
+            },
+          ],
           details: { mode: "invalid", results: [] },
         };
       }

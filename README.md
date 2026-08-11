@@ -1,6 +1,6 @@
 # agents-memo
 
-Obsidian wiki plugin for AI coding agents — personal knowledge vault with LLM-assisted ingestion, research, and retrieval.
+Obsidian wiki plugin for AI coding agents — personal knowledge vault with LLM-assisted ingestion, research, and retrieval. Ships as a pi extension package with Claude Code compatibility.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {'background':'#000','primaryColor':'#ffffff','primaryTextColor':'#000000','primaryBorderColor':'#000000','lineColor':'#000000','textColor':'#000000','titleColor':'#000000','clusterBkg':'#f3f4f6','clusterBorder':'#000000','edgeLabelBackground':'#ffffff'}}}%%
@@ -75,18 +75,41 @@ flowchart
 
 ## Install
 
-**Prerequisites:** Obsidian 1.12.7+ and the Obsidian CLI binary on your `PATH`.
+**Prerequisites:** Obsidian 1.12.7+ with the CLI binary on your `PATH`.
 
-**Plugin installation:**
+### pi (recommended)
+
+```bash
+pi install npm:agents-memo
+```
+
+Configure vault path in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "agentsMemo": {
+    "vaultPath": "/absolute/path/to/vault"
+  }
+}
+```
+
+Or set it in `.pi/settings.json` for per-project overrides.
+
+### Claude Code
+
 ```bash
 claude plugin marketplace add misiekhardcore/agents-memo
 claude plugin install agents-memo@agents-memo
 ```
 
-**Vault registration:**
-1. Set `vault_path` when Claude Code prompts for user configuration
-2. Register your vault: `obsidian register vault=/absolute/path/to/vault`
-3. Verify: `obsidian list vaults`
+Set `vault_path` when Claude Code prompts for configuration.
+
+### Vault registration
+
+```bash
+obsidian register vault=/absolute/path/to/vault
+obsidian list vaults
+```
 
 See `_shared/setup.md` for troubleshooting and Flatpak setup.
 
@@ -120,18 +143,31 @@ See `_shared/setup.md` for troubleshooting and Flatpak setup.
   .obsidian/     (user-owned) Obsidian app config
 ```
 
-## Hooks
+## Runtime
 
-The plugin auto-runs passive automations via `hooks/hooks.json`:
+The package runs as a **pi extension** (`extensions/`) and as **Claude Code hooks** (`hooks/`). Both backends share the same skills, agents, and vault scripts.
 
-- **SessionStart — hot cache restore.** Injects `wiki/hot.md` if `bootstrap_read_hot` is `"always"` (default: `"on-demand"`, read by skills on activation to save tokens).
-- **SessionStart — index auto-read.** Injects `wiki/index.md` if `bootstrap_read_index` is `"always"` (default: `"on-demand"`, read by skills on activation to avoid baseline token cost).
-- **PostCompact — hot cache restore.** Re-injects after context compaction.
-- **PostCompact — index auto-read.** Re-injects `wiki/index.md` after context compaction when `bootstrap_read_index` is `"always"`.
-- **PostToolUse (Edit | Write) — auto-commit.** Changes under `wiki/` and `.raw/` are committed to vault git.
-- **PostToolUse (Edit | Write) — scratch log.** Touched files logged for SessionEnd reflection.
-- **Stop — hot cache nudge.** If wiki changed, prompt to refresh `wiki/hot.md`.
-- **SessionEnd — end-of-session reflection.** Patterns/decisions/learnings synthesized and appended to daily file (non-blocking, 60s timeout).
+### pi extension
+
+Registers lifecycle handlers for session events:
+
+- **Session start / compact** — injects `_shared/INIT.md`, hot cache, index, and project memory digest
+- **Tool call** — rewrites `obsidian` calls through `scripts/obsidian-cli.sh`, blocks direct vault I/O, guards daily overwrites
+- **Tool execution end** — guards `wiki/hot.md` against 0-byte corruption
+- **Agent settled** — auto-commits vault git changes
+- **Agent end** — distills the run into project + global core learnings (reflection)
+- **Session shutdown** — cross-project promotion sweep into `wiki/global-core.md`
+
+Also registers the `memo_dispatch` tool for delegating work to vault sub-agents (single, parallel, chain modes).
+
+### Claude Code hooks
+
+Equivalent automations via `hooks/hooks.json`:
+
+- **SessionStart** — hot cache + index injection
+- **PostToolUse** — auto-commit vault changes on write
+- **Stop** — hot cache nudge when vault was touched
+- **SessionEnd** — end-of-session reflection
 
 Hook logic in `hooks/*.sh`; `hooks.json` has thin invocations only.
 
@@ -149,16 +185,28 @@ Create `~/.config/systemd/user/wiki-lint.service` and `~/.config/systemd/user/wi
 
 ## Contributing
 
-**Prerequisites:** Node.js ≥ 20 and npm.
+**Prerequisites:** Node.js ≥ 22 and npm.
 
 ```bash
-npm install                # Install husky, lint-staged, pre-commit hook
-npm run format            # Minify all .md files
+npm install          # Install dependencies + husky pre-commit hook
+npm run build        # Compile extensions (tsup)
+npm run check        # Full validation: lint + format + typecheck + test
+npm run fix          # Auto-fix lint and formatting
 ```
 
-Pre-commit hook applies formatting via `lint-staged` to staged files.
+|Command|Purpose|
+|-|-|
+|`npm run build`|Compile TypeScript extensions to `dist/`|
+|`npm run test`|Run smoke + regression tests|
+|`npm run lint`|ESLint check|
+|`npm run format`|Prettier check|
+|`npm run typecheck`|TypeScript type-check|
+|`npm run check`|All gates (lint + format + typecheck + test)|
+|`npm run fix`|Auto-fix lint + format|
+
+Pre-commit hook runs `lint-staged`: ESLint + Prettier on staged TS/JS/JSON, minify-md on staged MD.
 
 ## More
 
-- Plugin homepage: <https://github.com/misiekhardcore/agents-memo>
-- Agent-facing docs (skills, vault structure, ingest rules): [`CLAUDE.md`](CLAUDE.md)
+- Repository: <https://github.com/misiekhardcore/agents-memo>
+- Agent-facing docs (skills, vault structure, ingest rules): [`AGENTS.md`](AGENTS.md)
