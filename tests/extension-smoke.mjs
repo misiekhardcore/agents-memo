@@ -561,6 +561,7 @@ section("AC17 — session_shutdown vault-cache invalidation");
   mkdirSync(join(cwdB, "wiki"), { recursive: true });
   mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx)); // fire while still in cwdA
   process.chdir(cwdB);
+  mock.ctx.cwd = cwdB; // simulate new session starting in different cwd
   try {
     const res = toolCall("t-reuse", "write", { path: join(cwdB, "wiki", "new.md") })[0];
     assert(res?.block === true, "post-shutdown cwd change re-resolves vault (new cwd wiki blocked)");
