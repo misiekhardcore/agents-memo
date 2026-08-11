@@ -46,6 +46,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+          registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
 
@@ -88,8 +89,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Setup npm registry
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
