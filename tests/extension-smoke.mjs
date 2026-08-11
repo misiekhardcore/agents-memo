@@ -573,6 +573,117 @@ section("AC17 — session_shutdown vault-cache invalidation");
   writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
 }
 
+section("AC17-worktree — handler cwd threading (ctx.cwd ≠ process.cwd())");
+{
+  // Simulate a git worktree: ctx.cwd points at a directory with its own
+  // .pi/settings.json, while process.cwd() remains at the parent repo.
+  // The extension must resolve settings and vault from ctx.cwd, not
+  // process.cwd(). Before the fix, readPiSettings() and resolveVaultPath()
+  // hardcoded process.cwd(), ignoring the worktree directory entirely.
+  //
+  // Use the CWD-wiki tier (no vaultPath in global pi settings) so the
+  // worktree's settings control resolution without global-first-wins
+  // interference. The CWD fallback tier and tool_call both thread ctx.cwd.
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+    agentsMemo: { bootstrapReadHot: "always" }, // no vaultPath — worktree tier controls
+  }));
+  const origCwd = process.cwd();
+
+  const worktree = join(SCRATCH, "worktree");
+  mkdirSync(join(worktree, "wiki"), { recursive: true });
+
+  try {
+    // process.cwd() is the repo root (no wiki/). ctx.cwd points to worktree
+    // which HAS a wiki/ subdir. CWD-wiki tier must resolve from ctx.cwd.
+    mock.ctx.cwd = worktree;
+
+    // resolveVaultPath(ctx.cwd) picks up the CWD-wiki tier from ctx.cwd,
+    // not process.cwd(). The repo root has no wiki/ so process.cwd()
+    // resolution returns null; ctx.cwd resolution returns worktree.
+    assert(memoMod.resolveVaultPath(worktree) === worktree, "resolveVaultPath(ctx.cwd) finds worktree via CWD-wiki tier");
+    assert(memoMod.resolveVaultPath() === null, "resolveVaultPath() without arg → process.cwd() repo root has no wiki/ → null");
+
+    // tool_call with worktree ctx.cwd: vault containment blocks writes to
+    // the worktree's wiki/, not the global VAULT.
+    const res = toolCall("t-wt", "write", { path: join(worktree, "wiki", "new.md") })[0];
+    assert(res?.block === true, "tool_call with worktree ctx.cwd blocks write to worktree wiki/");
+    const resGlobal = toolCall("t-wt-global", "write", { path: join(VAULT, "wiki", "new.md") })[0];
+    assert(resGlobal === undefined, "tool_call with worktree ctx.cwd passes write to global VAULT (not the resolved vault)");
+
+    // A file path relative to ctx.cwd (not process.cwd()) must be resolved
+    // for vault containment. This is tested indirectly: tool_call above already
+    // verified that writes to worktree/wiki/ are blocked — containment
+    // resolution happened against worktree (ctx.cwd), not the repo root.
+  } finally {
+    mock.ctx.cwd = origCwd;
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+    rmSync(worktree, { recursive: true, force: true });
+  }
+}
+
+section("AC11-worktree — session_compact uses lastCwd");
+{
+  // Regression: session_compact has no ctx, so before the fix it always called
+  // readPiSettings() / getVaultPath() without a cwd argument, falling back to
+  // process.cwd(). In a worktree, process.cwd() may have changed by compact time
+  // (pi may chdir between before_agent_start and compact). The fix caches
+  // lastCwd at before_agent_start and consumes it at session_compact.
+  const worktree = join(SCRATCH, "worktree-compact");
+  const worktreeVault = join(SCRATCH, "worktree-compact-vault");
+  mkdirSync(join(worktree, ".pi"), { recursive: true });
+  mkdirSync(join(worktreeVault, "wiki"), { recursive: true });
+  writeFileSync(join(worktreeVault, "wiki", "hot.md"), "worktree compact hot\n");
+  writeFileSync(join(worktree, ".pi", "settings.json"), JSON.stringify({
+    agentsMemo: {
+      vaultPath: worktreeVault,
+      bootstrapReadHot: "always",
+    },
+  }));
+
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  // No vaultPath in global settings — worktree tier fills it.
+  writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+    agentsMemo: { bootstrapReadHot: "always" },
+  }));
+
+  const origCwd = process.cwd();
+
+  // Fresh module = fresh bootstrap latch.
+  const memo3 = await jiti.import(join(REPO, "extensions", "agents-memo.ts"));
+  const mock3 = createMockPi();
+  memo3.default(mock3.pi);
+
+  try {
+    // Simulate worktree: before_agent_start fires with ctx.cwd = worktree.
+    // lastCwd is now cached.
+    mock3.ctx.cwd = worktree;
+    mock3.handlers["before_agent_start"]
+      .map((h) => h({}, mock3.ctx));
+
+    // By compact time, pi may have chdir'd back to the parent.
+    // process.cwd() is the original repo root; only lastCwd remembers
+    // the worktree. If session_compact used process.cwd() it would
+    // resolve a different vault (or none at all).
+    process.chdir(origCwd);
+    mock3.ctx.cwd = origCwd; // pi updates ctx.cwd too
+    mock3.sent.length = 0;
+    mock3.handlers["session_compact"].forEach((h) => h({}, mock3.ctx));
+
+    // The hot from the worktree vault must be re-injected, proving
+    // session_compact used lastCwd (not process.cwd()) for vault resolution.
+    // process.cwd() is the repo root (no wiki/ subdir → no vault resolved
+    // → no hot injection). Only lastCwd=worktree reaches the worktree vault.
+    const hotSends = mock3.sent.filter((s) => s.msg.customType === "agents-memo-hot");
+    assert(hotSends.length === 1, "session_compact re-injects hot via lastCwd (worktree vault resolved)");
+  } finally {
+    process.chdir(origCwd);
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(worktreeVault, { recursive: true, force: true });
+  }
+}
+
 section("project-memory — slug derivation (git remote + sanitization)");
 {
   gitUrlQueue = [
@@ -594,7 +705,7 @@ section("project-memory — slug derivation (git remote + sanitization)");
 
 section("project-memory — core.md pure functions");
 {
-  const { parseCoreFile, mergeReflection, renderCoreFile } = memoMod;
+  const { parseCoreFile, mergeReflection, renderCoreFile, bigrams, jaccard, findMergePairs, applyMerges, compactCoreFile } = memoMod;
   const parsed = parseCoreFile(CORE_SEED);
   assert(parsed.learnings.length === 1 && parsed.learnings[0].text === "Keep edits small" && parsed.learnings[0].score === 1, "parse: learning bullet with score marker");
   assert(parsed.watchouts.length === 1 && parsed.watchouts[0].text === "guess without verifying" && parsed.watchouts[0].score === 1, "parse: watch-out 'Avoid:' prefix stripped");
@@ -1313,6 +1424,133 @@ section("M2 — claude settings tiers in extension resolution");
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
     rmSync(join(HOME, ".claude", "settings.json"), { force: true });
     rmSync(join(HOME, ".claude", "settings.local.json"), { force: true });
+  }
+}
+
+section("core-compact — bigrams + jaccard");
+{
+  const { bigrams, jaccard } = memoMod;
+  const bs = bigrams("cat");
+  assert(bs.has(" c") && bs.has("ca") && bs.has("at") && bs.has("t "), "bigrams includes edge bigrams with space padding");
+  assert(bs.size === 4, "bigrams set size correct for 'cat'");
+
+  const sim = jaccard("cat", "cats");
+  assert(sim >= 0.3 && sim <= 0.9, `jaccard('cat','cats') returns sensible similarity (got ${sim})`);
+  assert(jaccard("cat", "cat") === 1, "identical strings → jaccard = 1");
+  assert(jaccard("cat", "dog") < 0.3, "dissimilar strings → low jaccard");
+  assert(jaccard("", "") === 1, "both empty → jaccard = 1");
+  assert(jaccard("a", "") === 0, "one empty → jaccard = 0");
+}
+
+section("core-compact — findMergePairs + applyMerges");
+{
+  const { findMergePairs, applyMerges } = memoMod;
+  const entries = [
+    { text: "Use dependency injection for all services", score: 3 },
+    { text: "Use dependency injection in every module", score: 2 },
+    { text: "Write tests first", score: 1 },
+  ];
+  // The first two bullets share the "Use dependency injection" prefix.
+  const low = findMergePairs(entries, 0.3);
+  assert(low.length === 1, `low threshold finds one pair (got ${low.length})`);
+  assert(low[0].similarity >= 0.3, `pair similarity meets the threshold (got ${low[0].similarity})`);
+
+  const high = findMergePairs(entries, 0.95);
+  assert(high.length === 0, "high threshold finds no pairs");
+
+  // applyMerges: entries referenced as "merge" are removed; "keep" scores are boosted.
+  // The pair objects must reference the same CoreEntry instances as the entries
+  // array (as findMergePairs does), so Set.has() matches by reference.
+  const e1 = { text: "Inject deps", score: 3 };
+  const e2 = { text: "Use DI", score: 2 };
+  const merged = applyMerges(
+    [e1, e2],
+    [{ keep: e1, merge: e2, similarity: 0.5 }],
+  );
+  assert(merged.length === 1, "applyMerges removes the merge entry");
+  assert(merged[0].text === "Inject deps" && merged[0].score === 5, "applyMerges keeps the keeper with combined score");
+}
+
+section("core-compact — compactCoreFile round-trip");
+{
+  const { compactCoreFile, parseCoreFile } = memoMod;
+  const slug = REPO_SLUG;
+  const relPath = `wiki/projects/${slug}/core.md`;
+  // Seed a core with two near-duplicate bullets that share most text and one
+  // completely unrelated bullet.
+  projectFiles.set(relPath, [
+    "---", "type: project-core", `project: ${slug}`, "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+    `# Project Learnings — ${slug}`, "",
+    "## High-value learnings",
+    "- Use dependency injection to wire all services<!--score:4-->",
+    "- Use dependency injection for wiring every module<!--score:2-->",
+    "- Write tests before implementing features<!--score:1-->",
+    "",
+    "## Watch-outs",
+    "- Avoid: guess without verifying<!--score:1-->",
+    "",
+  ].join("\n"));
+
+  // Threshold 0.45: the two DI bullets share the "Use dependency injection"
+  // prefix and should merge; the test bullet is unrelated.
+  const result = compactCoreFile(VAULT, slug, 0.45);
+  assert(result === 1, `compactCoreFile merges 1 pair (got ${result})`);
+  const compacted = projectFiles.get(relPath) ?? "";
+  assert(compacted.includes("Use dependency injection"), "keeper bullet survives");
+  const compressed = parseCoreFile(compacted);
+  assert(compressed.learnings.length === 2, "compact reduces 3 learnings to 2");
+  assert(compressed.watchouts.length === 1, "watch-outs untouched");
+
+  // High threshold (0.95) → no-op.
+  projectFiles.set(relPath, [
+    "---", "type: project-core", `project: ${slug}`, "created: 2026-08-07", "updated: 2026-08-07", "---", "",
+    "## High-value learnings",
+    "- Use DI<!--score:3-->",
+    "- Write tests<!--score:1-->",
+    "",
+  ].join("\n"));
+  const before = projectFiles.get(relPath);
+  assert(compactCoreFile(VAULT, slug, 0.95) === 0, "high threshold → no pairs → 0 merged");
+  assert(projectFiles.get(relPath) === before, "no-op leaves core byte-identical");
+
+  // Missing file (empty core) → 0 (nothing to compact, no error).
+  projectFiles.delete(relPath);
+  assert(compactCoreFile(VAULT, slug, 0.5) === 0, "missing file → 0 (empty core, nothing to compact)");
+
+  // Read failure → null (no clobber).
+  projectFiles.set(relPath, "existing");
+  failReads.set(relPath, "Error: boom");
+  assert(compactCoreFile(VAULT, slug, 0.5) === null, "read failure → null");
+  failReads.delete(relPath);
+  projectFiles.delete(relPath);
+}
+
+section("core-compact — command registration + config defaults");
+{
+  const cmd = mock.commands.find((c) => c.name === "wiki compact-core");
+  assert(!!cmd && !!cmd?.opts?.description, "/wiki compact-core registered with description");
+  assert(cmd.opts.description.includes("near-duplicate"), "description mentions near-duplicate merging");
+
+  const cfg = memoMod.readPiSettings();
+  assert(cfg.similarityThreshold === 0.7, "default similarityThreshold = 0.7");
+  assert(cfg.autoCompactThreshold === 0.85, "default autoCompactThreshold = 0.85");
+}
+
+section("core-compact — config validation (out-of-range → default)");
+{
+  const globalSettings = join(HOME, ".pi", "agent", "settings.json");
+  const origGlobal = readFileSync(globalSettings, "utf-8");
+  try {
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { vaultPath: VAULT, similarityThreshold: 2.5, autoCompactThreshold: -0.1 } }));
+    const cfg = memoMod.readPiSettings();
+    assert(cfg.similarityThreshold === 0.7, "similarityThreshold > 1 rejected → default");
+    assert(cfg.autoCompactThreshold === 0.85, "negative autoCompactThreshold rejected → default");
+    writeFileSync(globalSettings, JSON.stringify({ agentsMemo: { vaultPath: VAULT, similarityThreshold: 0.5, autoCompactThreshold: 0.9 } }));
+    const cfg2 = memoMod.readPiSettings();
+    assert(cfg2.similarityThreshold === 0.5, "valid similarityThreshold honoured");
+    assert(cfg2.autoCompactThreshold === 0.9, "valid autoCompactThreshold honoured");
+  } finally {
+    writeFileSync(globalSettings, origGlobal);
   }
 }
 

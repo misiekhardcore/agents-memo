@@ -86,7 +86,15 @@ interface AgentsMemoConfig {
   reflectModel?: ReflectModelConfig;
   memoryInjection?: MemoryInjectionConfig;
   pageCandidacy?: PageCandidacyConfig;
+  // Jaccard bigram similarity threshold for /wiki compact-core.
+  similarityThreshold?: number;
+  // Auto-compact the project core on session_shutdown when the number of
+  // near-duplicate pairs at or above this threshold exceeds 0.
+  autoCompactThreshold?: number;
 }
+
+const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
+const DEFAULT_AUTO_COMPACT_THRESHOLD = 0.85;
 
 const PROJECT_MEMORY_DEFAULTS: ProjectMemoryConfig = {
   enabled: true,
@@ -204,6 +212,12 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
         merged.bootstrapReadIndex = block.bootstrapReadIndex;
       }
       if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined) merged.autoCommit = block.autoCommit;
+      if (typeof block.similarityThreshold === "number" && isFinite(block.similarityThreshold) && block.similarityThreshold >= 0 && block.similarityThreshold <= 1 && merged.similarityThreshold === undefined) {
+        merged.similarityThreshold = block.similarityThreshold;
+      }
+      if (typeof block.autoCompactThreshold === "number" && isFinite(block.autoCompactThreshold) && block.autoCompactThreshold >= 0 && block.autoCompactThreshold <= 1 && merged.autoCompactThreshold === undefined) {
+        merged.autoCompactThreshold = block.autoCompactThreshold;
+      }
       // Nested blocks: per-key first-wins at the nested level too.
       mergeNestedBlock(projectMemory, block.projectMemory, PROJECT_MEMORY_SPEC);
       mergeNestedBlock(reflectModel, block.reflectModel, REFLECT_MODEL_SPEC);
@@ -237,6 +251,8 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
   merged.pageCandidacy = {
     threshold: pageCandidacy.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
   };
+  merged.similarityThreshold = merged.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
+  merged.autoCompactThreshold = merged.autoCompactThreshold ?? DEFAULT_AUTO_COMPACT_THRESHOLD;
   return merged;
 }
 
@@ -625,6 +641,20 @@ export function buildReflectionSystemPrompt(maxItems: number): string {
     "- Rewrite project-specific details into generic rules.",
     '- Put anything reusable across projects in "global": design patterns, non-trivial bug fixes, architecture decisions.',
     "- Write global items generically - no project names, paths, or other project-specific identifiers.",
+    "",
+    "Examples of good reflections:",
+    '  {\"mistakes\":["Deleted import that was still used elsewhere, causing a build error"],',
+    '   \"fixes\":["Use IDE find-references before deleting any export"],',
+    '   \"global\":["Always run the full test suite after refactoring shared modules"]}',
+    "",
+    '  {\"mistakes\":["Changed a function signature without updating callers"],',
+    '   \"fixes\":["Use TypeScript strict mode to catch signature mismatches at compile time"],',
+    '   \"global\":["When changing a public API, grep the entire codebase for usages first"]}',
+    "",
+    "Self-check before responding:",
+    "- Are all entries concrete and actionable (not vague like 'be more careful')?",
+    "- Is each mistake paired with a corresponding prevention-oriented fix?",
+    "- Are global items truly reusable across projects (no project-specific names)?",
   ].join("\n");
 }
 
@@ -786,6 +816,15 @@ interface CoreEntry {
   from?: string[];
 }
 
+// A near-duplicate pair detected by Jaccard bigram similarity on the raw
+// entry text (before normalization). The higher-scored entry is kept; the
+// lower-scored entry's text is discarded and its score is folded in.
+interface MergePair {
+  keep: CoreEntry;
+  merge: CoreEntry;
+  similarity: number;
+}
+
 interface ProjectCore {
   learnings: CoreEntry[];
   watchouts: CoreEntry[];
@@ -797,20 +836,200 @@ const FROM_MARKER_RE = /<!--from:[^>]*-->/g; // strip (normalizeKey)
 const FROM_EXTRACT_RE = /<!--from:([^>]*)-->\s*/; // capture (parseCoreFile)
 const WIKILINK_RE = /\[\[[^\]]*\]\]/g;
 
-// Normalized dedup key: lowercase, whitespace collapsed. [[wikilinks]], the
-// <!--candidate--> render marker and the <!--from:...--> provenance marker are
-// stripped so a promoted pointer bullet still dedups against the raw
-// reflection text it came from. A bullet that is nothing but a link falls
-// back to its raw text so distinct pointers never collide on an empty key.
+const SYNONYM_MAP: Record<string, string> = {
+  // Contractions and common variants collapse to a canonical form
+  "don't": "dont",
+  "doesn't": "doesnt",
+  "won't": "wont",
+  "can't": "cant",
+  "isn't": "isnt",
+  "aren't": "arent",
+  "wasn't": "wasnt",
+  "weren't": "werent",
+  "haven't": "havent",
+  "hasn't": "hasnt",
+  "hadn't": "hadnt",
+  "couldn't": "couldnt",
+  "shouldn't": "shouldnt",
+  "wouldn't": "wouldnt",
+  "didn't": "didnt",
+  "it's": "its",
+  "that's": "thats",
+  "there's": "theres",
+  "here's": "heres",
+  "what's": "whats",
+  "who's": "whos",
+  "let's": "lets",
+  "i'm": "im",
+  "you're": "youre",
+  "we're": "we",
+  "they're": "theyre",
+  "i've": "ive",
+  "you've": "youve",
+  "we've": "weve",
+  "they've": "theyve",
+};
+
+const STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+  "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+  "been", "being", "have", "has", "had", "do", "does", "did", "will",
+  "would", "could", "should", "may", "might", "must", "shall", "can",
+  "this", "that", "these", "those", "it", "its", "we", "they", "he",
+  "she", "i", "you", "my", "your", "our", "their", "his", "her", "me",
+  "him", "us", "them", "not", "no", "nor", "so", "if", "then", "than",
+  "too", "very", "just", "about", "also", "into", "only", "other",
+  "some", "such", "each", "both", "all", "any", "more", "most", "now",
+]);
+
+// ---- Porter stemmer helpers (steps 1a-1c) ----
+
+function isVowel(c: string): boolean {
+  return "aeiou".includes(c);
+}
+
+function isConsonantAt(word: string, i: number): boolean {
+  if (isVowel(word[i])) return false;
+  if (word[i] === "y") return i === 0 ? true : !isVowel(word[i - 1]);
+  return true;
+}
+
+// measure() = count of vowel-consonant sequences (VC)
+function measure(word: string): number {
+  let n = 0;
+  let i = 0;
+  while (i < word.length) {
+    // skip consonants
+    while (i < word.length && isConsonantAt(word, i)) i++;
+    if (i === word.length) break;
+    // skip vowels
+    while (i < word.length && !isConsonantAt(word, i)) i++;
+    n++;
+  }
+  return n;
+}
+
+function containsVowel(word: string): boolean {
+  for (let i = 0; i < word.length; i++) {
+    if (!isConsonantAt(word, i)) return true;
+  }
+  return false;
+}
+
+function endsWithCvc(word: string): boolean {
+  if (word.length < 3) return false;
+  const last = word[word.length - 1];
+  if ("wxy".includes(last)) return false;
+  const i = word.length - 1;
+  return isConsonantAt(word, i - 2) && !isConsonantAt(word, i - 1) && isConsonantAt(word, i);
+}
+
+function step1bRecode(word: string): string {
+  // recode after removing -ed or -ing
+  if (/(at|bl|iz)$/.test(word)) return word + "e";
+  // double consonant at end → single
+  const len = word.length;
+  if (len >= 2 && word[len - 1] === word[len - 2] && !"lsz".includes(word[len - 1])) {
+    word = word.slice(0, -1);
+  }
+  // (m=1 and *o) → add e
+  if (measure(word) === 1 && endsWithCvc(word)) word += "e";
+  return word;
+}
+
+function stem(word: string): string {
+  if (word.length <= 2) return word;
+
+  // Step 1a
+  if (word.endsWith("sses")) {
+    word = word.slice(0, -2);
+  } else if (word.endsWith("ies")) {
+    word = word.slice(0, -2);
+  } else if (word.endsWith("ss")) {
+    // keep as-is
+  } else if (word.endsWith("s")) {
+    word = word.slice(0, -1);
+  }
+
+  // Step 1b
+  if (word.endsWith("eed")) {
+    const stemPart = word.slice(0, -3);
+    if (measure(stemPart) > 0) word = stemPart + "ee";
+  } else {
+    let found = false;
+    if (word.endsWith("ed")) {
+      const stemPart = word.slice(0, -2);
+      if (containsVowel(stemPart)) { word = stemPart; found = true; }
+    }
+    if (!found && word.endsWith("ing")) {
+      const stemPart = word.slice(0, -3);
+      if (containsVowel(stemPart)) { word = stemPart; found = true; }
+    }
+    if (found) word = step1bRecode(word);
+  }
+
+  // Step 1c
+  if (word.endsWith("y") && containsVowel(word.slice(0, -1))) {
+    word = word.slice(0, -1) + "i";
+  }
+
+  return word;
+}
+
+// 7-step normalized dedup key pipeline:
+//   1. lowercase
+//   2. strip wikilinks and provenance markers
+//   3. collapse whitespace and tokenize
+//   4. map synonyms to canonical forms
+//   5. remove stopwords
+//   6. stem each token (Porter 1a-1c)
+//   7. rejoin into normalized key
+// A bullet that reduces to empty falls back to raw lowercased text so
+// distinct pointers never collide on an empty key.
 function normalizeKey(text: string): string {
-  const stripped = text
-    .toLowerCase()
-    .replace(WIKILINK_RE, "")
-    .replace(CANDIDATE_MARKER_RE, "")
-    .replace(FROM_MARKER_RE, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return stripped || text.toLowerCase().replace(/\s+/g, " ").trim();
+  // Step 1: lowercase
+  let s = text.toLowerCase();
+
+  // Step 2: strip wikilinks and provenance markers
+  s = s.replace(WIKILINK_RE, "").replace(CANDIDATE_MARKER_RE, "").replace(FROM_MARKER_RE, "");
+
+  // Step 3: collapse whitespace and tokenize
+  s = s.replace(/\s+/g, " ").trim();
+  const tokens = s.split(/\s+/).filter(Boolean);
+
+  // Steps 4-6: synonym map → stopword removal → stemming
+  const processed = tokens
+    .map((t) => SYNONYM_MAP[t] ?? t)       // Step 4: canonical synonym
+    .filter((t) => !STOPWORDS.has(t))       // Step 5: drop stopwords
+    .map((t) => stem(t));                   // Step 6: Porter stem
+
+  // Step 7: rejoin
+  const key = processed.join(" ").trim();
+  return key || text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Character bigrams from a normalized, space-collapsed representation.
+// A single leading/trailing space is prepended/appended so word boundaries
+// contribute edge bigrams (" cat " → [" c", "ca", "at", "t "]).
+export function bigrams(text: string): Set<string> {
+  const s = ` ${text.toLowerCase().replace(/\s+/g, " ").trim()} `;
+  const set = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+}
+
+// Jaccard similarity over character bigrams: |A∩B| / |A∪B|. Returns a value
+// in [0, 1]; 1 = identical bigram sets. Used by findMergePairs to detect
+// near-duplicate bullets whose normalized keys differ but whose raw text is
+// textually close (synonyms, rephrasing, pointer variations).
+export function jaccard(a: string, b: string): number {
+  const ba = bigrams(a);
+  const bb = bigrams(b);
+  if (ba.size === 0 && bb.size === 0) return 1;
+  let intersect = 0;
+  for (const g of ba) { if (bb.has(g)) intersect++; }
+  const union = ba.size + bb.size - intersect;
+  return union === 0 ? 0 : intersect / union;
 }
 
 // Parse a core.md document into entries. Bullets carry an invisible HTML
@@ -885,6 +1104,43 @@ function mergeEntries(entries: CoreEntry[], incoming: Array<string | { text: str
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, maxItems);
 }
 
+// Find near-duplicate pairs among entries whose raw text has Jaccard bigram
+// similarity >= threshold. Normalized-key dedup catches exact repeats, but
+// rephrased bullets ("Use DI" vs "Prefer dependency injection") slip through
+// because their normalized forms differ. Bigram similarity catches these.
+// Pairs are sorted by similarity desc (most-similar first); within a tie the
+// higher-scored entry is "keep" so the highest-impact bullet survives.
+export function findMergePairs(entries: CoreEntry[], threshold: number): MergePair[] {
+  const pairs: MergePair[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const sim = jaccard(entries[i].text, entries[j].text);
+      if (sim >= threshold) {
+        const a = entries[i];
+        const b = entries[j];
+        pairs.push({
+          keep: a.score >= b.score ? a : b,
+          merge: a.score >= b.score ? b : a,
+          similarity: sim,
+        });
+      }
+    }
+  }
+  return pairs.sort((a, b) => b.similarity - a.similarity);
+}
+
+// Apply merge pairs to an entry list: remove every item designated as "merge",
+// keep every "keep" item (mutated in-place so scores accumulate across pairs).
+// An entry can appear in multiple pairs (e.g. A pairs with B and C); its score
+// is boosted once per pair where it is the keeper. Returns the filtered list.
+export function applyMerges(entries: CoreEntry[], pairs: MergePair[]): CoreEntry[] {
+  const toRemove = new Set(pairs.map((p) => p.merge));
+  for (const pair of pairs) {
+    pair.keep.score += pair.merge.score;
+  }
+  return entries.filter((e) => !toRemove.has(e));
+}
+
 // Merge a reflection into existing entries: fixes → learnings, mistakes →
 // watch-outs (rendered with an "Avoid: " prefix). Existing entries get score+1
 // on a normalized-text hit; new entries start at 1. Sorted by score desc,
@@ -937,6 +1193,39 @@ export function updateProjectCore(
     );
   } catch {
     // best-effort - never fail the agent loop
+  }
+}
+
+// Compact a project core by merging near-duplicate entries whose raw text
+// has Jaccard bigram similarity >= threshold. Read-failure guard (parity with
+// updateProjectCore): a transient CLI failure skips and a missing file is a
+// no-op. Returns the number of pairs merged, or null on failure / no-op.
+export function compactCoreFile(
+  vaultPath: string,
+  slug: string,
+  threshold: number,
+): number | null {
+  try {
+    const relPath = projectCoreRel(slug);
+    const read = execObsidianReadSafe(vaultPath, relPath);
+    if (!read.ok) return null;
+    const core = read.content ? parseCoreFile(read.content) : { learnings: [], watchouts: [] };
+    const pairs = findMergePairs(core.learnings, threshold);
+    if (pairs.length === 0) return 0;
+    const compacted = applyMerges(core.learnings, pairs);
+    // Re-render with the today's date; the original created date is not
+    // preserved on compact (unlike global core updates) — compact is a
+    // structural reshaping, not a merge of new data.
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const rendered = renderCoreFile(slug, dateStr, { learnings: compacted, watchouts: core.watchouts });
+    const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
+    execSync(
+      `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
+      { cwd: vaultPath, encoding: "utf-8", timeout: 10000 },
+    );
+    return pairs.length;
+  } catch {
+    return null;
   }
 }
 
@@ -1579,9 +1868,45 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  // ── /wiki compact-core ───────────────────────────────────────────────────
+  // Merge near-duplicate bullets in the project core whose raw text has
+  // Jaccard bigram similarity >= similarityThreshold. On-demand compact,
+  // replay-safe: a second run with the same config is a no-op.
+  pi.registerCommand("wiki compact-core", {
+    description: "Merge near-duplicate entries in the project core (Jaccard bigram similarity)",
+    handler: async (_args, ctx) => {
+      const vaultPath = getVaultPath(ctx.cwd);
+      const config = readPiSettings(ctx.cwd);
+      if (!vaultPath) {
+        if (ctx.hasUI) ctx.ui.notify("agents-memo: no vault resolved — cannot compact", "error");
+        return;
+      }
+      if (config.projectMemory?.enabled === false) {
+        if (ctx.hasUI) ctx.ui.notify("agents-memo: project memory is disabled (projectMemory.enabled=false)", "error");
+        return;
+      }
+      const slug = getProjectSlug(ctx.cwd);
+      const threshold = config.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
+      const result = compactCoreFile(vaultPath, slug, threshold);
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          result === null
+            ? "agents-memo: compact failed (core.md read error)"
+            : result > 0
+              ? `agents-memo: compacted ${result} near-duplicate pair(s) in wiki/projects/${slug}/core.md`
+              : `agents-memo: nothing to compact in wiki/projects/${slug}/core.md`,
+          result === null ? "error" : "info",
+        );
+      }
+    },
+  });
+
   // ── AC17: session_shutdown - end-of-session summary reflection ─────────────
   pi.on("session_shutdown", (_event, _ctx) => {
     const vaultPath = getVaultPath(); // for this session's reflection
+    // Capture the session's cwd before resetting — auto-compact below needs
+    // it for slug derivation, and process.cwd() may have changed by shutdown.
+    const shutdownCwd = lastCwd;
     bootstrapServed = false; // next session in this process re-injects
     lastProjectSlug = undefined; // stale slug must not leak into the next session
     lastCwd = undefined;
@@ -1596,6 +1921,17 @@ export default function (pi: ExtensionAPI) {
         config.projectMemory?.promotionThreshold ?? PROJECT_MEMORY_DEFAULTS.promotionThreshold,
         config.projectMemory?.maxGlobalItems ?? PROJECT_MEMORY_DEFAULTS.maxGlobalItems,
       );
+    }
+    // Auto-compact: merge near-duplicate bullets in the session's project
+    // core when the number of pairs at/above autoCompactThreshold exceeds 0.
+    // Wrapped in try/catch so a compact failure never blocks shutdown.
+    if (vaultPath && config.projectMemory?.enabled !== false) {
+      try {
+        const slug = getProjectSlug(shutdownCwd ?? process.cwd());
+        compactCoreFile(vaultPath, slug, config.autoCompactThreshold ?? DEFAULT_AUTO_COMPACT_THRESHOLD);
+      } catch {
+        // best-effort — never fail the shutdown
+      }
     }
     // Consume the session flags so a shutdown landing mid-run never leaks
     // touches into the next session's first agent_end reflection.
