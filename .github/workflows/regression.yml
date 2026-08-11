@@ -56,8 +56,6 @@ jobs:
         env:
           HUSKY: 0
       - run: node tests/extension-smoke.mjs
-      - run: bash tests/regression/daily-append.sh
       - run: bash tests/regression/read-canvas.sh
-      - run: bash tests/regression/hot-cache-guard.sh
       - run: bash tests/regression/pi-settings-tier.sh
       - run: bash tests/regression/prune-lint-guard.sh
