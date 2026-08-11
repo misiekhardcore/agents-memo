@@ -228,10 +228,22 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
       }
       if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined)
         merged.autoCommit = block.autoCommit;
-      if (typeof block.similarityThreshold === "number" && isFinite(block.similarityThreshold) && block.similarityThreshold >= 0 && block.similarityThreshold <= 1 && merged.similarityThreshold === undefined) {
+      if (
+        typeof block.similarityThreshold === "number" &&
+        isFinite(block.similarityThreshold) &&
+        block.similarityThreshold >= 0 &&
+        block.similarityThreshold <= 1 &&
+        merged.similarityThreshold === undefined
+      ) {
         merged.similarityThreshold = block.similarityThreshold;
       }
-      if (typeof block.autoCompactThreshold === "number" && isFinite(block.autoCompactThreshold) && block.autoCompactThreshold >= 0 && block.autoCompactThreshold <= 1 && merged.autoCompactThreshold === undefined) {
+      if (
+        typeof block.autoCompactThreshold === "number" &&
+        isFinite(block.autoCompactThreshold) &&
+        block.autoCompactThreshold >= 0 &&
+        block.autoCompactThreshold <= 1 &&
+        merged.autoCompactThreshold === undefined
+      ) {
         merged.autoCompactThreshold = block.autoCompactThreshold;
       }
       // Nested blocks: per-key first-wins at the nested level too.
@@ -682,13 +694,13 @@ export function buildReflectionSystemPrompt(maxItems: number): string {
     "- Write global items generically - no project names, paths, or other project-specific identifiers.",
     "",
     "Examples of good reflections:",
-    '  {\"mistakes\":["Deleted import that was still used elsewhere, causing a build error"],',
-    '   \"fixes\":["Use IDE find-references before deleting any export"],',
-    '   \"global\":["Always run the full test suite after refactoring shared modules"]}',
+    '  {"mistakes":["Deleted import that was still used elsewhere, causing a build error"],',
+    '   "fixes":["Use IDE find-references before deleting any export"],',
+    '   "global":["Always run the full test suite after refactoring shared modules"]}',
     "",
-    '  {\"mistakes\":["Changed a function signature without updating callers"],',
-    '   \"fixes\":["Use TypeScript strict mode to catch signature mismatches at compile time"],',
-    '   \"global\":["When changing a public API, grep the entire codebase for usages first"]}',
+    '  {"mistakes":["Changed a function signature without updating callers"],',
+    '   "fixes":["Use TypeScript strict mode to catch signature mismatches at compile time"],',
+    '   "global":["When changing a public API, grep the entire codebase for usages first"]}',
     "",
     "Self-check before responding:",
     "- Are all entries concrete and actionable (not vague like 'be more careful')?",
@@ -952,15 +964,90 @@ const SYNONYM_MAP: Record<string, string> = {
 };
 
 const STOPWORDS = new Set([
-  "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-  "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
-  "been", "being", "have", "has", "had", "do", "does", "did", "will",
-  "would", "could", "should", "may", "might", "must", "shall", "can",
-  "this", "that", "these", "those", "it", "its", "we", "they", "he",
-  "she", "i", "you", "my", "your", "our", "their", "his", "her", "me",
-  "him", "us", "them", "not", "no", "nor", "so", "if", "then", "than",
-  "too", "very", "just", "about", "also", "into", "only", "other",
-  "some", "such", "each", "both", "all", "any", "more", "most", "now",
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "by",
+  "from",
+  "as",
+  "is",
+  "was",
+  "are",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "must",
+  "shall",
+  "can",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "we",
+  "they",
+  "he",
+  "she",
+  "i",
+  "you",
+  "my",
+  "your",
+  "our",
+  "their",
+  "his",
+  "her",
+  "me",
+  "him",
+  "us",
+  "them",
+  "not",
+  "no",
+  "nor",
+  "so",
+  "if",
+  "then",
+  "than",
+  "too",
+  "very",
+  "just",
+  "about",
+  "also",
+  "into",
+  "only",
+  "other",
+  "some",
+  "such",
+  "each",
+  "both",
+  "all",
+  "any",
+  "more",
+  "most",
+  "now",
 ]);
 
 // ---- Porter stemmer helpers (steps 1a-1c) ----
@@ -1040,11 +1127,17 @@ function stem(word: string): string {
     let found = false;
     if (word.endsWith("ed")) {
       const stemPart = word.slice(0, -2);
-      if (containsVowel(stemPart)) { word = stemPart; found = true; }
+      if (containsVowel(stemPart)) {
+        word = stemPart;
+        found = true;
+      }
     }
     if (!found && word.endsWith("ing")) {
       const stemPart = word.slice(0, -3);
-      if (containsVowel(stemPart)) { word = stemPart; found = true; }
+      if (containsVowel(stemPart)) {
+        word = stemPart;
+        found = true;
+      }
     }
     if (found) word = step1bRecode(word);
   }
@@ -1080,9 +1173,9 @@ function normalizeKey(text: string): string {
 
   // Steps 4-6: synonym map → stopword removal → stemming
   const processed = tokens
-    .map((t) => SYNONYM_MAP[t] ?? t)       // Step 4: canonical synonym
-    .filter((t) => !STOPWORDS.has(t))       // Step 5: drop stopwords
-    .map((t) => stem(t));                   // Step 6: Porter stem
+    .map((t) => SYNONYM_MAP[t] ?? t) // Step 4: canonical synonym
+    .filter((t) => !STOPWORDS.has(t)) // Step 5: drop stopwords
+    .map((t) => stem(t)); // Step 6: Porter stem
 
   // Step 7: rejoin
   const key = processed.join(" ").trim();
@@ -1108,7 +1201,9 @@ export function jaccard(a: string, b: string): number {
   const bb = bigrams(b);
   if (ba.size === 0 && bb.size === 0) return 1;
   let intersect = 0;
-  for (const g of ba) { if (bb.has(g)) intersect++; }
+  for (const g of ba) {
+    if (bb.has(g)) intersect++;
+  }
   const union = ba.size + bb.size - intersect;
   return union === 0 ? 0 : intersect / union;
 }
@@ -1292,11 +1387,7 @@ export function updateProjectCore(
 // has Jaccard bigram similarity >= threshold. Read-failure guard (parity with
 // updateProjectCore): a transient CLI failure skips and a missing file is a
 // no-op. Returns the number of pairs merged, or null on failure / no-op.
-export function compactCoreFile(
-  vaultPath: string,
-  slug: string,
-  threshold: number,
-): number | null {
+export function compactCoreFile(vaultPath: string, slug: string, threshold: number): number | null {
   try {
     const relPath = projectCoreRel(slug);
     const read = execObsidianReadSafe(vaultPath, relPath);
@@ -1309,7 +1400,10 @@ export function compactCoreFile(
     // preserved on compact (unlike global core updates) — compact is a
     // structural reshaping, not a merge of new data.
     const dateStr = new Date().toISOString().slice(0, 10);
-    const rendered = renderCoreFile(slug, dateStr, { learnings: compacted, watchouts: core.watchouts });
+    const rendered = renderCoreFile(slug, dateStr, {
+      learnings: compacted,
+      watchouts: core.watchouts,
+    });
     const obsCli = join(pluginRoot, "scripts", "obsidian-cli.sh");
     execSync(
       `bash "${obsCli}" create path=${relPath} overwrite=true content="${escapeShellContent(rendered)}"`,
@@ -2055,7 +2149,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (config.projectMemory?.enabled === false) {
-        if (ctx.hasUI) ctx.ui.notify("agents-memo: project memory is disabled (projectMemory.enabled=false)", "error");
+        if (ctx.hasUI)
+          ctx.ui.notify(
+            "agents-memo: project memory is disabled (projectMemory.enabled=false)",
+            "error",
+          );
         return;
       }
       const slug = getProjectSlug(ctx.cwd);
@@ -2101,7 +2199,11 @@ export default function (pi: ExtensionAPI) {
     if (vaultPath && config.projectMemory?.enabled !== false) {
       try {
         const slug = getProjectSlug(shutdownCwd ?? process.cwd());
-        compactCoreFile(vaultPath, slug, config.autoCompactThreshold ?? DEFAULT_AUTO_COMPACT_THRESHOLD);
+        compactCoreFile(
+          vaultPath,
+          slug,
+          config.autoCompactThreshold ?? DEFAULT_AUTO_COMPACT_THRESHOLD,
+        );
       } catch {
         // best-effort — never fail the shutdown
       }
