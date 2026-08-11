@@ -108,10 +108,16 @@ out=$("$WRAPPER" __not_a_verb__ 2>/dev/null); rc=$?
 assert_exit 1 "$rc" "unknown verb"
 assert_contains "$out" "Error: Command" "unknown-verb error pattern"
 
-# 4. Read with no args → reads the active file (Obsidian CLI default).
+# 4. Read with no args → either reads the active file (when Obsidian is
+#    running with an open file) or fails with "No active file" (CI / no
+#    active editor). Both are valid; the wrapper must not crash.
 out=$("$WRAPPER" read 2>/dev/null); rc=$?
-assert_exit 0 "$rc" "read with no args"
-assert_contains "$out" "---" "read with no args returns frontmatter content"
+if [ "$rc" -eq 0 ]; then
+  assert_contains "$out" "---" "read with no args returns frontmatter content"
+else
+  assert_exit 1 "$rc" "read with no args (no active file)"
+  assert_contains "$out" "Error: No active file" "no-active-file error pattern"
+fi
 
 # 5. Format-default: backlinks default is tsv (one path per line); json adds wrapping.
 out_default=$("$WRAPPER" backlinks path=wiki/index.md 2>/dev/null); rc=$?
