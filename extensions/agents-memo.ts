@@ -181,10 +181,10 @@ function mergeNestedBlock<T extends object>(merged: Partial<T> | undefined, bloc
 }
 
 // Exported for the smoke test (pi only invokes the default export).
-export function readPiSettings(): AgentsMemoConfig {
+export function readPiSettings(cwd?: string): AgentsMemoConfig {
   const files = [
     join(homedir(), ".pi", "agent", "settings.json"),
-    join(process.cwd(), ".pi", "settings.json"),
+    join(cwd ?? process.cwd(), ".pi", "settings.json"),
   ];
   const merged: AgentsMemoConfig = {};
   const projectMemory: Partial<ProjectMemoryConfig> = {};
@@ -341,8 +341,8 @@ export function readClaudeVaultPath(): string | null {
 }
 
 // Exported for the smoke test (pi only invokes the default export).
-export function resolveVaultPath(): string | null {
-  const config = readPiSettings();
+export function resolveVaultPath(cwd?: string): string | null {
+  const config = readPiSettings(cwd);
   if (config.vaultPath) {
     const expanded = expandTilde(config.vaultPath);
     if (existsSync(expanded) && statSync(expanded).isDirectory()) {
@@ -350,9 +350,10 @@ export function resolveVaultPath(): string | null {
     }
   }
   // Fallback: CWD contains a wiki/ subdirectory (resolve-vault.sh tier 2).
-  const cwdWiki = join(process.cwd(), "wiki");
+  const dir = cwd ?? process.cwd();
+  const cwdWiki = join(dir, "wiki");
   if (existsSync(cwdWiki) && statSync(cwdWiki).isDirectory()) {
-    return process.cwd();
+    return dir;
   }
   // Fallback: Claude Code settings (resolve-vault.sh tiers 3/4) — already
   // validated (exists + directory) inside readClaudeVaultPath.
@@ -468,8 +469,8 @@ function realpathOrResolve(p: string): string {
 // matching block-direct-vault-io.sh whose `"$VAULT"/*` literal-prefix checks
 // never match the root. One realpath walk per side serves both the block
 // decision and the bypass-allowlist rel path.
-function vaultContainedPair(filePath: string, vaultPath: string): { abs: string; vaultAbs: string } | null {
-  const abs = realpathOrResolve(resolve(process.cwd(), filePath));
+function vaultContainedPair(filePath: string, vaultPath: string, resolveFrom?: string): { abs: string; vaultAbs: string } | null {
+  const abs = realpathOrResolve(resolve(resolveFrom ?? process.cwd(), filePath));
   const vaultAbs = realpathOrResolve(resolve(vaultPath));
   const prefix = vaultAbs.endsWith("/") ? vaultAbs : vaultAbs + "/";
   return abs.startsWith(prefix) ? { abs, vaultAbs } : null;
@@ -528,14 +529,18 @@ function isObsidianRouted(cmd: string): boolean {
 let vaultTouched = false; // vault touched during the current agent run
 let sessionTouched = false; // vault touched at any point this session
 let vaultPathCached: string | null = null;
+let vaultPathCachedFor: string | undefined;
 // toolCallId → bash command (tool_execution_end has no input field; the guard
 // needs the command text to know whether hot.md was involved).
 const bashCommands = new Map<string, string>();
 
-function getVaultPath(): string | null {
-  if (vaultPathCached === null) {
-    vaultPathCached = resolveVaultPath();
+function getVaultPath(cwd?: string): string | null {
+  const key = cwd ?? process.cwd();
+  if (vaultPathCached !== null && vaultPathCachedFor === key) {
+    return vaultPathCached;
   }
+  vaultPathCached = resolveVaultPath(key);
+  vaultPathCachedFor = key;
   return vaultPathCached;
 }
 
@@ -1167,8 +1172,8 @@ function appendDailyReflection(vaultPath: string, label: string): void {
 // ─── Extension entry point ────────────────────────────────────────────────────
 export default function (pi: ExtensionAPI) {
   // ── AC5/AC6/AC7/AC12: tool_call (rewrite + block) ──────────────────────────
-  pi.on("tool_call", (event: ToolCallEvent, _ctx: ExtensionContext): ToolCallEventResult | void => {
-    const vaultPath = getVaultPath();
+  pi.on("tool_call", (event: ToolCallEvent, ctx: ExtensionContext): ToolCallEventResult | void => {
+    const vaultPath = getVaultPath(ctx.cwd);
 
     if (isToolCallEventType("bash", event)) {
       let cmd = event.input.command;
@@ -1226,7 +1231,7 @@ export default function (pi: ExtensionAPI) {
       const raw = (event.input as { file_path?: string; path?: string });
       const filePath = String(raw.file_path ?? raw.path ?? "");
       if (filePath) {
-        const pair = vaultContainedPair(filePath, vaultPath);
+        const pair = vaultContainedPair(filePath, vaultPath, ctx.cwd);
         if (pair) {
           // Bypass-allowlist rel path from the same realpath-normalized values
           // used by containment (parity with block-direct-vault-io.sh, which
@@ -1262,6 +1267,9 @@ export default function (pi: ExtensionAPI) {
   // same project's core.md even if process.cwd() changed mid-session (memory:
   // never guess the slug in session_compact).
   let lastProjectSlug: string | undefined;
+  // Cwd cached at before_agent_start so session_compact can resolve the
+  // vault / settings against the worktree even though it has no ctx.
+  let lastCwd: string | undefined;
   const isSessionBootstrap = () => {
     if (bootstrapServed) return false;
     // All handlers of one emit complete within the current task; flip the
@@ -1285,10 +1293,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── AC9: inject wiki/hot.md when bootstrapReadHot = "always" ────────────────
-  pi.on("before_agent_start", (_event, _ctx): BeforeAgentStartEventResult | void => {
+  pi.on("before_agent_start", (_event, ctx): BeforeAgentStartEventResult | void => {
     if (!isSessionBootstrap()) return;
-    if (readPiSettings().bootstrapReadHot !== "always") return;
-    const vaultPath = getVaultPath();
+    if (readPiSettings(ctx.cwd).bootstrapReadHot !== "always") return;
+    const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath) return;
     const hot = execObsidianRead(vaultPath, "wiki/hot.md");
     if (!hot) return;
@@ -1302,10 +1310,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── AC10: inject wiki/index.md when bootstrapReadIndex = "always" ───────────
-  pi.on("before_agent_start", (_event, _ctx): BeforeAgentStartEventResult | void => {
+  pi.on("before_agent_start", (_event, ctx): BeforeAgentStartEventResult | void => {
     if (!isSessionBootstrap()) return;
-    if (readPiSettings().bootstrapReadIndex !== "always") return;
-    const vaultPath = getVaultPath();
+    if (readPiSettings(ctx.cwd).bootstrapReadIndex !== "always") return;
+    const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath) return;
     const index = execObsidianRead(vaultPath, "wiki/index.md");
     if (!index) return;
@@ -1326,16 +1334,17 @@ export default function (pi: ExtensionAPI) {
   // the slug in session_compact).
   pi.on("before_agent_start", (_event, ctx): BeforeAgentStartEventResult | void => {
     if (!isSessionBootstrap()) return;
-    const config = readPiSettings();
+    const config = readPiSettings(ctx.cwd);
     if (config.projectMemory?.enabled === false) return;
-    const vaultPath = getVaultPath();
+    const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath) return;
-    // Slug cached BEFORE the sessionStart flag check: session_compact
+    // Slug and cwd cached BEFORE the sessionStart flag check: session_compact
     // re-injects whenever reInjectOnCompact alone is on, independent of
     // whether the session-start digest was injected (memory: never guess the
-    // slug in session_compact — process.cwd() may have changed by then).
+    // slug or cwd in session_compact — process.cwd() may have changed by then).
     const slug = getProjectSlug(ctx.cwd);
     lastProjectSlug = slug;
+    lastCwd = ctx.cwd;
     if (config.memoryInjection?.sessionStart === false) return;
     const digest = buildDigest(vaultPath, slug, config);
     if (!digest) return;
@@ -1351,8 +1360,8 @@ export default function (pi: ExtensionAPI) {
   // ── AC11: session_compact re-injects hot.md / index.md per bootstrap config ─
   // and the cached project core.md (same pattern as hot/index).
   pi.on("session_compact", (_event: SessionCompactEvent) => {
-    const config = readPiSettings();
-    const vaultPath = getVaultPath();
+    const config = readPiSettings(lastCwd);
+    const vaultPath = getVaultPath(lastCwd);
     if (!vaultPath) return;
 
     if (config.bootstrapReadHot === "always") {
@@ -1392,8 +1401,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ── AC13: tool_execution_end - hot-cache guard (0-byte corruption) ─────────
-  pi.on("tool_execution_end", (event: ToolExecutionEndEvent, _ctx: ExtensionContext) => {
-    const vaultPath = getVaultPath();
+  pi.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
+    const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath || event.toolName !== "bash") return;
 
     const cmd = bashCommands.get(event.toolCallId);
@@ -1448,8 +1457,8 @@ export default function (pi: ExtensionAPI) {
 
   // ── AC14/AC15: agent_settled - auto-commit + notification ──────────────────
   pi.on("agent_settled", async (_event: AgentSettledEvent, ctx: ExtensionContext) => {
-    const config = readPiSettings();
-    const vaultPath = getVaultPath();
+    const config = readPiSettings(ctx.cwd);
+    const vaultPath = getVaultPath(ctx.cwd);
     // Auto-commit is authoritative from git status, not from the per-run
     // touched flag: agent_end (which owns that flag) fires before
     // agent_settled in the pi runtime, so gating here on vaultTouched would
@@ -1487,9 +1496,9 @@ export default function (pi: ExtensionAPI) {
     // runtime: _emitExtensionEvent → _emitAgentSettled).
     const touched = vaultTouched;
     vaultTouched = false;
-    const vaultPath = getVaultPath();
+    const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath) return;
-    const config = readPiSettings();
+    const config = readPiSettings(ctx.cwd);
     if (config.projectMemory?.enabled === false) {
       // Legacy path: static global daily marker (sessions that opted out of
       // per-project pages keep the old behavior unchanged). Stays
@@ -1544,8 +1553,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("wiki promote-global", {
     description: "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
     handler: async (_args, ctx) => {
-      const vaultPath = getVaultPath();
-      const config = readPiSettings();
+      const vaultPath = getVaultPath(ctx.cwd);
+      const config = readPiSettings(ctx.cwd);
       if (!vaultPath) {
         if (ctx.hasUI) ctx.ui.notify("agents-memo: no vault resolved — cannot sweep", "error");
         return;
@@ -1575,6 +1584,7 @@ export default function (pi: ExtensionAPI) {
     const vaultPath = getVaultPath(); // for this session's reflection
     bootstrapServed = false; // next session in this process re-injects
     lastProjectSlug = undefined; // stale slug must not leak into the next session
+    lastCwd = undefined;
     // Promotion sweep (§9.6): cross-project repeats land in the global core
     // at session end (gated on global memory being enabled). The vaultPath
     // read above guards reload churn — without a vault resolved this session
@@ -1596,6 +1606,7 @@ export default function (pi: ExtensionAPI) {
     // re-populates it, so resetting first would be undone. A reused process
     // starting in a different cwd then re-resolves on the next session.
     vaultPathCached = null;
+    vaultPathCachedFor = undefined;
     if (!vaultPath || !touched) return;
     appendDailyReflection(vaultPath, "[agents-memo] session shutdown - end-of-session reflection");
   });
