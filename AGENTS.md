@@ -36,9 +36,9 @@ _attachments/      Images and PDFs
 - **Manifest:** `.raw/.manifest.json` (delta tracking for ingested sources)
 
 ## Vault I/O
-All vault reads and writes go through **Obsidian CLI**, not `Read`/`Write`/`Edit`. Enforcement is active, not advisory: two PreToolUse hooks gate every vault interaction.
-- `hooks/obsidian-cli-rewrite.sh` (matcher `Bash`) rewrites bare `obsidian <verb> ...` calls through `scripts/obsidian-cli.sh` (vault resolution, preflight, exit-code normalization).
-- `hooks/block-direct-vault-io.sh` (matcher `Read|Write|Edit`) **denies** direct file-tool calls on vault paths and returns the correct CLI verb in the deny reason, so the agent self-corrects on the next turn.
+All vault reads and writes go through **Obsidian CLI**, not `Read`/`Write`/`Edit`. Enforcement is active, not advisory: the pi extension gates every vault interaction.
+- The `tool_call` handler rewrites bare `obsidian <verb> ...` calls through `scripts/obsidian-cli.sh` (vault resolution, preflight, exit-code normalization).
+- The same handler **denies** direct file-tool calls on vault paths and returns the correct CLI verb in the deny reason, so the agent self-corrects on the next turn.
 - **Technical Patterns**: See `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md` for CLI patterns, slugging, indexing, active enforcement, and the canonical bypass list.
 
 ```bash
@@ -106,7 +106,7 @@ See `_shared/documentation-standards.md`. All skill and reference docs follow th
 
 ## Cross-Project Access
 
-Add to other projects' CLAUDE.md:
+Add to other projects' `.pi/agent/settings.json`:
 ```markdown
 ## Wiki Knowledge Base
 Path: /path/to/vault
@@ -116,7 +116,7 @@ Do NOT read for general coding questions.
 
 # Agent Architecture
 
-This directory (`agents/`) contains sub-agent definition files dispatched by orchestrator skills for parallelized or specialized work. Agents are loaded via Claude Code's `Agent()` or `Task()` tool.
+This directory (`agents/`) contains sub-agent definition files dispatched by orchestrator skills for parallelized or specialized work. Agents are loaded via the `memo_dispatch` tool (single, parallel, or chain mode).
 
 ## Agent Inventory
 

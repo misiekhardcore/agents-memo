@@ -8,7 +8,7 @@ Read on demand.
 
 ## 1. Invocation contract
 
-All vault operations through `scripts/obsidian-cli.sh` (PreToolUse hook rewrites bare `obsidian` calls transparently).
+All vault operations through `scripts/obsidian-cli.sh` (the pi extension rewrites bare `obsidian` calls transparently).
 
 ```bash
 "${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" read path=wiki/hot.md
@@ -16,7 +16,7 @@ All vault operations through `scripts/obsidian-cli.sh` (PreToolUse hook rewrites
 
 **vault= is name-only** (basename, not path). Wrapper derives it automatically.
 
-**Obsidian must be running.** CLI is desktop IPC; SessionStart hook probes connectivity.
+**Obsidian must be running.** CLI is desktop IPC; the extension probes connectivity at session start.
 
 **All output to stdout** (including errors). Wrapper normalizes exit codes.
 
@@ -484,7 +484,7 @@ CLI requires Obsidian running; cron context fails at pre-flight (exit 3). See is
 
 ## 5. Documented exceptions
 
-For the canonical list of paths where direct `Read` / `Write` / `Edit` on vault files is permitted because the CLI cannot serve the operation, see `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md`. That list (binary files, canvas, JSON admin artifacts, `.raw/**` reads) is enforced by `hooks/block-direct-vault-io.sh`.
+For the canonical list of paths where direct `Read` / `Write` / `Edit` on vault files is permitted because the CLI cannot serve the operation, see `${MEMO_PLUGIN_PWD}/skills/vault-ops/SKILL.md`. That list (binary files, canvas, JSON admin artifacts, `.raw/**` reads) is enforced by the pi extension at runtime.
 
 Non-vault exceptions still relevant to the CLI:
 

@@ -7,7 +7,6 @@ _shared/          Cross-skill reference docs
 scripts/          Utility scripts (obsidian-cli.sh, resolve-vault.sh)
 skills/<name>/    One skill per dir (SKILL.md entrypoint + references/)
 agents/           Sub-agent definitions
-hooks/            Claude Code hooks (hooks.json + .sh)
 _templates/       Templater templates + authoring guidance
 ```
 
@@ -75,7 +74,7 @@ All vault I/O via `scripts/obsidian-cli.sh`:
 "${MEMO_PLUGIN_PWD}/scripts/obsidian-cli.sh" append path=wiki/index.md content="- New entry"
 ```
 
-PreToolUse hook transparently rewrites raw `obsidian <verb> ...` calls. For error handling, exit codes, and escape hatches, see `_shared/cli.md`.
+The pi extension transparently rewrites raw `obsidian <verb> ...` calls. For error handling, exit codes, and escape hatches, see `_shared/cli.md`.
 
 ## Skill & Command Frontmatter
 
