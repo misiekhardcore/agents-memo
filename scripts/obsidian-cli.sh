@@ -9,6 +9,7 @@
 #
 # Usage:
 #   scripts/obsidian-cli.sh <verb> [arg=value ...]
+#   scripts/obsidian-cli.sh --help | -h
 #
 # A PreToolUse Bash hook (hooks/obsidian-cli-rewrite.sh) transparently rewrites
 # raw `obsidian <verb> ...` calls into this wrapper. Skills should still invoke
@@ -121,10 +122,50 @@
 # captures in tests/spike-results/. After every Obsidian CLI minor-version
 # bump, re-run scripts/cli-spike.sh and update this header if the contract
 # changes.
+#
+# Verb signatures live in three places — this header contract, the `--help`
+# heredoc, and the cli-smoke assertions — a new wrapper verb must update all
+# three.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 0. --help / -h short-circuit — must run BEFORE vault resolution and
+#    pre-flight so usage works with no vault configured and no Obsidian
+#    running. Unknown --* flags are NOT intercepted here; they fall through
+#    to the upstream CLI unchanged.
+case "${1:-}" in
+  --help|-h)
+    cat <<'EOF'
+Usage:
+  scripts/obsidian-cli.sh <verb> [arg=value ...]
+  scripts/obsidian-cli.sh --help | -h
+
+Wrapper verbs (synthesized by this script):
+  create-or-append  file=<path> template=<full-file-template> content=<bullet>
+    Example: create-or-append file=notes/foo.md template="## Notes" content="- bullet"
+  read-head  path=<vault-relative-path> [lines=N]
+    Example: read-head path=notes/x.md lines=20
+  read-tail  path=<vault-relative-path> [lines=N]
+    Example: read-tail path=notes/x.md lines=20
+  grep  path=<vault-relative-path> pattern=<substring-or-regex> [context=N] [ignore-case=true]
+    Example: grep path=wiki pattern=foo
+  grep-files  pattern=<substring-or-regex> [dir=<vault-relative-dir>] [context=N] [ignore-case=true]
+    Example: grep-files pattern=foo dir=wiki
+  read-canvas  path=<vault-relative-path>
+    Example: read-canvas path=wiki/canvases/main.canvas
+
+Common upstream verbs (passed through to the Obsidian CLI):
+  read, append, prepend, create, search, commands, tags, backlinks, outline,
+  bookmarks, orphans, deadends, tasks, properties, aliases, unresolved,
+  eval, command
+  Example: read path=wiki/index.md
+  Full verb list: obsidian --help
+EOF
+    exit 0
+    ;;
+esac
 
 # 1. Resolve vault path. Failure is exit 4 — callers that want fail-soft chain `|| exit 0`.
 VAULT="$("$SCRIPT_DIR/resolve-vault.sh")" || exit 4

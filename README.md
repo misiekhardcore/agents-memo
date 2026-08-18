@@ -31,6 +31,22 @@ obsidian list vaults
 
 See `_shared/setup.md` for troubleshooting and Flatpak setup.
 
+## Configuration
+
+All options live in the `agentsMemo` block of `~/.pi/agent/settings.json`
+(global) or `.pi/settings.json` (per-project). Global values win per key;
+project values only fill keys the global file leaves unset.
+
+|Key|Type|Default|Description|
+|-|-|-|-|
+|`vaultPath`|string|auto-discovered `wiki/` in CWD|Absolute path to the vault|
+|`bootstrapReadHot`|`"always"` \|`"on-demand"` \|`"never"`|`"on-demand"`|When the hot cache is injected at session start|
+|`bootstrapReadIndex`|`"always"` \|`"on-demand"` \|`"never"`|`"on-demand"`|When the index is injected at session start|
+|`autoCommit`|boolean|`true`|Auto-commit vault git changes when the agent settles|
+|`autoPush`|boolean|`false`|After auto-commit, push the vault repo to its remote. Never force-pushes or retries - a failed push (remote moved) leaves the commit local and shows a warning|
+
+autoPush requires the vault repo to have a remote and the current branch to have an upstream (run `git push --set-upstream origin <branch>` once).
+
 ## Skills
 
 - `wiki` — bootstrap / health-check the vault
@@ -60,6 +76,36 @@ See `_shared/setup.md` for troubleshooting and Flatpak setup.
   _attachments/  images + PDFs referenced by wiki pages
   .obsidian/     (user-owned) Obsidian app config
 ```
+
+## Why Markdown, not a vector database?
+
+agents-memo stores memories as plain Markdown files in an Obsidian vault and
+retrieves them with grep. No embeddings, no vector index, no API costs.
+
+||Markdown + grep|Vector DB|
+|-|-|-|
+|Cost|$0 - no embedding API, no storage|Embedding API + index hosting|
+|Speed|grep over a personal vault is milliseconds|Fast, but adds an embedding step|
+|Determinism|Same query, same result, every time|Approximate - results drift with model updates|
+|Editability|Every memory is a file you can open, edit, link|Opaque chunks, hard to correct|
+
+The unique wins: paginated `grep` + `read-tail` reads keep LLM context small
+(no context explosion), retrieval is zero-cost and fully transparent, changes
+are auto-committed to git, and the whole knowledge graph
+is human-editable.
+
+## Real-world example
+
+1. **Ingest** - during a project, run `/ingest <api-spec-url>` (or `obsidian
+   create path=wiki/sources/...`). The ingest skill extracts entities and
+   concepts into `wiki/concepts/` and `wiki/entities/` and cross-references
+   them.
+2. **Query** - days or weeks later, ask `/query` "what does the API return
+   for auth failures?". The query skill searches wiki pages and synthesizes
+   an answer with citations.
+3. **Save** - `/save` files the conversation or insight back into the vault.
+4. **Commit** - every write is auto-committed to git, so the vault is a
+   versioned, searchable memory that grows with each session.
 
 ## Extension
 
@@ -94,20 +140,9 @@ Create `~/.config/systemd/user/wiki-lint.service` and `~/.config/systemd/user/wi
 npm install          # Install dependencies + husky pre-commit hook
 npm run build        # Compile extensions (tsup)
 npm run check        # Full validation: lint + format + typecheck + test
-npm run fix          # Auto-fix lint and formatting
 ```
 
-|Command|Purpose|
-|-|-|
-|`npm run build`|Compile TypeScript extensions to `dist/`|
-|`npm run test`|Run smoke + regression tests|
-|`npm run lint`|ESLint check|
-|`npm run format`|Prettier check|
-|`npm run typecheck`|TypeScript type-check|
-|`npm run check`|All gates (lint + format + typecheck + test)|
-|`npm run fix`|Auto-fix lint + format|
-
-Pre-commit hook runs `lint-staged`: ESLint + Prettier on staged TS/JS/JSON, minify-md on staged MD.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide (validation gates, pre-commit hook, PR process).
 
 ## More
 

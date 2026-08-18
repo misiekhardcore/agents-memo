@@ -12,6 +12,7 @@
 //   AC8-11  before_agent_start INIT/hot/index injection + session_compact re-injection
 //   AC13    tool_execution_end hot-cache 0-byte guard
 //   AC14-15 agent_settled auto-commit + notify
+//   AC14b   agent_settled auto-push (opt-in, git push after auto-commit)
 //   AC16-17 agent_end / session_shutdown reflection (write-verb touched tracking)
 //   PM      per-project memory: slug derivation, bounded in-process
 //           reflection (complete() mock via jiti alias), project daily +
@@ -152,6 +153,7 @@ function createMockPi() {
   // .obsidian/workspace.json dirt (Obsidian's own churn), false → clean.
   let gitDirty = false;
   let gitCommitCode = 0;
+  let gitPushCode = 0;
   let notifyCount = 0;
   const workingMessages = [];
   const dirts = { wiki: " M wiki/hot.md\n", obsidian: " M .obsidian/workspace.json\n" };
@@ -174,6 +176,9 @@ function createMockPi() {
         // handler must inspect it; "nothing to commit" exits 1.
         return Promise.resolve({ code: gitCommitCode, stdout: "" });
       }
+      if (cmd === "git" && args.includes("push")) {
+        return Promise.resolve({ code: gitPushCode, stdout: "" });
+      }
       return Promise.resolve({ code: 0, stdout: "" });
     },
   };
@@ -194,6 +199,7 @@ function createMockPi() {
     pi, handlers, tools, commands, sent, execs,
     setGitDirty: (d) => { gitDirty = d === true ? "wiki" : d; },
     setGitCommitCode: (c) => { gitCommitCode = c; },
+    setGitPushCode: (c) => { gitPushCode = c; },
     notifyCount: () => notifyCount,
     workingMessages: () => workingMessages,
     ctx,
@@ -535,6 +541,142 @@ section("AC14/15 — agent_settled auto-commit + notify");
   assert(mock.execs.slice().some((e) => e[0] === "git" && e.includes("commit")), "commit attempted on wiki dirt");
   assert(mock.notifyCount() === notifyBeforeFail, "commit exit 1 → no notification");
   mock.setGitCommitCode(0);
+}
+
+section("AC14b - agent_settled auto-push (opt-in)");
+{
+  // autoPush is unset in the top-of-file settings → default off: a dirty
+  // vault auto-commits but must NOT push.
+  mock.setGitDirty(true);
+  const pushOffBaseline = mock.execs.length;
+  const notifyOffBaseline = mock.notifyCount();
+  const writeEvP1 = { toolCallId: "t-p1", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p1"` } };
+  mock.handlers["tool_call"][0](writeEvP1, mock.ctx);
+  await settled();
+  assert(!mock.execs.slice(pushOffBaseline).some((e) => e[0] === "git" && e.includes("push")), "autoPush unset → no git push (default off)");
+  assert(mock.notifyCount() === notifyOffBaseline + 1, "autoPush unset → commit still notifies (info)");
+  // restore clean state so the flipped settings run below starts from a
+  // clean status gate.
+  mock.setGitDirty(false);
+  await settled();
+
+  // Flip settings to autoPush: true (first-wins global read), replicate the
+  // AC16/17 origPi try/finally pattern.
+  const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
+  writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+    agentsMemo: {
+      vaultPath: VAULT,
+      bootstrapReadHot: "always",
+      bootstrapReadIndex: "on-demand",
+      autoCommit: true,
+      autoPush: true,
+    },
+  }));
+  try {
+    // push ok: status → add → commit → push, exactly one info toast.
+    mock.setGitPushCode(0);
+    mock.setGitDirty(true);
+    const pushOkBaseline = mock.execs.length;
+    const notifyOkBaseline = mock.notifyCount();
+    const writeEvP2 = { toolCallId: "t-p2", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p2"` } };
+    mock.handlers["tool_call"][0](writeEvP2, mock.ctx);
+    await settled();
+    const pushOkExecs = mock.execs.slice(pushOkBaseline);
+    const commitIdx = pushOkExecs.findIndex((e) => e[0] === "git" && e.includes("commit"));
+    const pushIdx = pushOkExecs.findIndex((e) => e[0] === "git" && e.includes("push"));
+    assert(pushIdx !== -1, "autoPush on → git push attempted");
+    assert(commitIdx !== -1 && pushIdx > commitIdx, "push runs after commit (status → add → commit → push)");
+    assert(mock.notifyCount() === notifyOkBaseline + 1, "push ok → exactly one notify (info)");
+
+    // push failure (e.g. remote moved): commit stays local, warning toast
+    // fires, and settled() must not throw.
+    mock.setGitPushCode(128);
+    mock.setGitDirty(true);
+    const beforeFail = mock.execs.length;
+    const notifyFailBaseline = mock.notifyCount();
+    const writeEvP3 = { toolCallId: "t-p3", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p3"` } };
+    mock.handlers["tool_call"][0](writeEvP3, mock.ctx);
+    let threw = false;
+    try {
+      await settled();
+    } catch {
+      threw = true;
+    }
+    assert(!threw, "push failure → settled() does not throw");
+    assert(mock.execs.slice(beforeFail).some((e) => e[0] === "git" && e.includes("push")), "push failure → push still attempted");
+    assert(mock.notifyCount() === notifyFailBaseline + 2, "push failure → info + warning toasts");
+    mock.setGitPushCode(0);
+
+    // clean repo: status gate short-circuits before add/commit/push.
+    mock.setGitDirty(false);
+    const cleanBaseline = mock.execs.length;
+    await settled();
+    assert(!mock.execs.slice(cleanBaseline).some((e) => e[0] === "git" && (e.includes("push") || e.includes("commit") || e.includes("add"))), "clean repo → no push (status gate short-circuits)");
+
+    // explicit autoPush: false → same path as unset: commit, no push.
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: {
+        vaultPath: VAULT,
+        bootstrapReadHot: "always",
+        bootstrapReadIndex: "on-demand",
+        autoCommit: true,
+        autoPush: false,
+      },
+    }));
+    mock.setGitDirty(true);
+    const pushOff2Baseline = mock.execs.length;
+    const notifyOff2Baseline = mock.notifyCount();
+    const writeEvP4 = { toolCallId: "t-p4", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p4"` } };
+    mock.handlers["tool_call"][0](writeEvP4, mock.ctx);
+    await settled();
+    assert(!mock.execs.slice(pushOff2Baseline).some((e) => e[0] === "git" && e.includes("push")), "autoPush false → no git push");
+    assert(mock.notifyCount() === notifyOff2Baseline + 1, "autoPush false → commit still notifies (info)");
+
+    // autoCommit: false + autoPush: true → outer gate suppresses the whole
+    // status/add/commit/push pipeline before any git work.
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: {
+        vaultPath: VAULT,
+        bootstrapReadHot: "always",
+        bootstrapReadIndex: "on-demand",
+        autoCommit: false,
+        autoPush: true,
+      },
+    }));
+    mock.setGitDirty(true);
+    const commitOffBaseline = mock.execs.length;
+    const notifyCommitOff = mock.notifyCount();
+    const writeEvP5 = { toolCallId: "t-p5", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p5"` } };
+    mock.handlers["tool_call"][0](writeEvP5, mock.ctx);
+    await settled();
+    assert(!mock.execs.slice(commitOffBaseline).some((e) => e[0] === "git" && (e.includes("status") || e.includes("add") || e.includes("commit") || e.includes("push"))), "autoCommit false → no status/add/commit/push");
+    assert(mock.notifyCount() === notifyCommitOff, "autoCommit false → no notification");
+
+    // autoPush: true + commit exit 1 → short-circuit return before the push block.
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
+      agentsMemo: {
+        vaultPath: VAULT,
+        bootstrapReadHot: "always",
+        bootstrapReadIndex: "on-demand",
+        autoCommit: true,
+        autoPush: true,
+      },
+    }));
+    mock.setGitDirty(true);
+    mock.setGitCommitCode(1);
+    const commitFailBaseline = mock.execs.length;
+    const notifyCommitFail = mock.notifyCount();
+    const writeEvP6 = { toolCallId: "t-p6", toolName: "bash", input: { command: `obsidian append file=wiki/hot.md content="p6"` } };
+    mock.handlers["tool_call"][0](writeEvP6, mock.ctx);
+    await settled();
+    assert(mock.execs.slice(commitFailBaseline).some((e) => e[0] === "git" && e.includes("commit")), "commit exit 1 → commit still attempted");
+    assert(!mock.execs.slice(commitFailBaseline).some((e) => e[0] === "git" && e.includes("push")), "commit exit 1 → no push (short-circuits before push block)");
+    assert(mock.notifyCount() === notifyCommitFail, "commit exit 1 → no notification");
+    mock.setGitCommitCode(0);
+    mock.setGitDirty(false);
+  } finally {
+    writeFileSync(join(HOME, ".pi", "agent", "settings.json"), origPi);
+  }
 }
 
 section("AC17 — session_shutdown reflection");
