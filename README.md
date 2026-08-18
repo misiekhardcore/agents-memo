@@ -61,6 +61,36 @@ See `_shared/setup.md` for troubleshooting and Flatpak setup.
   .obsidian/     (user-owned) Obsidian app config
 ```
 
+## Why Markdown, not a vector database?
+
+agents-memo stores memories as plain Markdown files in an Obsidian vault and
+retrieves them with grep. No embeddings, no vector index, no API costs.
+
+||Markdown + grep|Vector DB|
+|-|-|-|
+|Cost|$0 - no embedding API, no storage|Embedding API + index hosting|
+|Speed|grep over a personal vault is milliseconds|Fast, but adds an embedding step|
+|Determinism|Same query, same result, every time|Approximate - results drift with model updates|
+|Editability|Every memory is a file you can open, edit, link|Opaque chunks, hard to correct|
+
+The unique wins: paginated `grep` + `read-tail` reads keep LLM context small
+(no context explosion), retrieval is zero-cost and fully transparent, changes
+are auto-committed to git, and the whole knowledge graph
+is human-editable.
+
+## Real-world example
+
+1. **Ingest** - during a project, run `/ingest <api-spec-url>` (or `obsidian
+   create path=wiki/sources/...`). The ingest skill extracts entities and
+   concepts into `wiki/concepts/` and `wiki/entities/` and cross-references
+   them.
+2. **Query** - days or weeks later, ask `/query` "what does the API return
+   for auth failures?". The query skill searches wiki pages and synthesizes
+   an answer with citations.
+3. **Save** - `/save` files the conversation or insight back into the vault.
+4. **Commit** - every write is auto-committed to git, so the vault is a
+   versioned, searchable memory that grows with each session.
+
 ## Extension
 
 Registers lifecycle handlers and tools for pi sessions:
