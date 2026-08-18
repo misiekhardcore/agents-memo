@@ -1,0 +1,30 @@
+{
+  "logLevel": "info",
+  "logPrefix": "forge",
+  "workspaceProvider": "git-worktree",
+  "agents": {},
+  "defaultAgent": {
+    "maxToolCalls": 40,
+    "maxTurns": 100
+  },
+  "logDir": ".forge/logs/",
+  "logRetentionDays": 7,
+  "logPayloads": false,
+  "worktreeSymlinks": [],
+  "taskTimeoutMs": 3600000,
+  "jsonRetryMaxAttempts": 2,
+  "specDirectories": {
+    "flows": [],
+    "agents": []
+  },
+  "display": {
+    "maxAgentEvents": 200,
+    "maxPreconnectBuffer": 2000,
+    "maxOverlayHeight": "85%"
+  },
+  "models": {},
+  "dev": {
+    "enabled": false
+  },
+  "forgeDir": ".forge"
+}

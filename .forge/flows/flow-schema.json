@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Feature Forge Flow Definition",
+  "description": "Self-contained flow definition. Declares a slash command, orchestrator config, and named deterministic routines.",
+  "type": "object",
+  "required": ["$schema", "name", "command", "orchestrator", "routines"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json"
+    },
+    "params": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "orchestrator": {
+      "$ref": "#/$defs/OrchestratorConfig"
+    },
+    "routines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "params", "steps"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string"
+                },
+                "default": {
+                  "type": "string"
+                },
+                "optional": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FlowInstruction"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "OrchestratorConfig": {
+      "type": "object",
+      "required": ["systemPrompt"],
+      "properties": {
+        "systemPrompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "promptParams": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "RoutineParam": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "default": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean"
+        }
+      }
+    },
+    "WorkspaceInstruction": {
+      "type": "object",
+      "required": ["id", "type", "provider"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "workspace"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "git-worktree"
+            },
+            {
+              "type": "string",
+              "const": "current-dir"
+            }
+          ]
+        },
+        "symlinks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "branch": {
+          "type": "string"
+        },
+        "baseRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AgentInstruction": {
+      "type": "object",
+      "required": ["id", "type", "systemPrompt", "prompt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "agent"
+        },
+        "systemPrompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "workingDir": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["workspace"],
+              "properties": {
+                "workspace": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["path"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        },
+        "parseJson": {
+          "type": "boolean"
+        },
+        "maxJsonRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "promptParams": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "type": "string"
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "off"
+            },
+            {
+              "type": "string",
+              "const": "minimal"
+            },
+            {
+              "type": "string",
+              "const": "low"
+            },
+            {
+              "type": "string",
+              "const": "medium"
+            },
+            {
+              "type": "string",
+              "const": "high"
+            },
+            {
+              "type": "string",
+              "const": "xhigh"
+            }
+          ]
+        }
+      }
+    },
+    "ParallelInstruction": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "parallel"
+        },
+        "failureMode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "fail_fast"
+            },
+            {
+              "type": "string",
+              "const": "continue_on_error"
+            },
+            {
+              "type": "string",
+              "const": "all_or_nothing"
+            }
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FlowInstruction"
+          }
+        }
+      }
+    },
+    "LoopInstruction": {
+      "type": "object",
+      "required": ["id", "type", "maxIterations"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "loop"
+        },
+        "maxIterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "while": {
+          "type": "string"
+        },
+        "continueWhile": {
+          "type": "string"
+        },
+        "accumulateFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FlowInstruction"
+          }
+        }
+      }
+    },
+    "CleanupInstruction": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "cleanup"
+        },
+        "of": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "GitInstruction": {
+      "type": "object",
+      "required": ["id", "type", "action", "cwd"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "git"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "add-and-commit"
+            },
+            {
+              "type": "string",
+              "const": "push-current"
+            }
+          ]
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SessionInstruction": {
+      "type": "object",
+      "required": ["id", "type", "key", "value"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "session"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "ShellInstruction": {
+      "type": "object",
+      "required": ["id", "type", "command"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "shell"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failFast": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RoutineRefInstruction": {
+      "type": "object",
+      "required": ["id", "type", "target"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "routine"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_as": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "FlowInstruction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkspaceInstruction"
+        },
+        {
+          "$ref": "#/$defs/AgentInstruction"
+        },
+        {
+          "$ref": "#/$defs/ParallelInstruction"
+        },
+        {
+          "$ref": "#/$defs/LoopInstruction"
+        },
+        {
+          "$ref": "#/$defs/CleanupInstruction"
+        },
+        {
+          "$ref": "#/$defs/GitInstruction"
+        },
+        {
+          "$ref": "#/$defs/SessionInstruction"
+        },
+        {
+          "$ref": "#/$defs/ShellInstruction"
+        },
+        {
+          "$ref": "#/$defs/RoutineRefInstruction"
+        }
+      ]
+    }
+  }
+}

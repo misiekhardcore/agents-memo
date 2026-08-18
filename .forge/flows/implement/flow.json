@@ -1,0 +1,193 @@
+{
+  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json",
+  "name": "implement",
+  "command": "/implement",
+  "orchestrator": {
+    "systemPrompt": "implement-orchestrator",
+    "prompt": "{{prompt}}"
+  },
+  "params": [
+    {
+      "name": "base",
+      "description": "Target base branch for the PR",
+      "default": "main"
+    }
+  ],
+  "routines": [
+    {
+      "id": "create_workspace",
+      "description": "Create an isolated workspace. Pass branch to reuse an existing workspace, or baseRef to create from a specific commit. branch and baseRef are mutually exclusive — pass only one, or neither (defaults to a new workspace from origin/HEAD).",
+      "params": [
+        {
+          "name": "branch",
+          "description": "Existing branch name to reuse (e.g. for adding to an open PR). If omitted, a new forge/ws-* branch is created.",
+          "optional": true
+        },
+        {
+          "name": "baseRef",
+          "description": "Git ref to create a new worktree from (defaults to origin/HEAD). Ignored when branch is provided.",
+          "optional": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "workspace",
+          "id": "ws",
+          "provider": "git-worktree",
+          "branch": "{{branch}}",
+          "baseRef": "{{baseRef}}"
+        }
+      ]
+    },
+    {
+      "id": "run_build_loop",
+      "params": [
+        {
+          "name": "workspace",
+          "description": "Absolute path to the git worktree to build in"
+        },
+        {
+          "name": "task",
+          "description": "The task description"
+        },
+        {
+          "name": "plan",
+          "description": "The implementation plan"
+        }
+      ],
+      "steps": [
+        {
+          "type": "loop",
+          "id": "build_loop",
+          "maxIterations": 3,
+          "continueWhile": "!results.builder?.parsed?.passed || !results.call_review?.parsed?.passed || !results.call_verify?.parsed?.passed",
+          "accumulateFrom": ["call_review", "call_verify"],
+          "steps": [
+            {
+              "type": "shell",
+              "id": "sync",
+              "command": "git fetch origin {{session.base}} 2>&1",
+              "cwd": "{{workspace}}",
+              "failFast": false
+            },
+            {
+              "type": "agent",
+              "id": "builder",
+              "systemPrompt": "build",
+              "workingDir": {
+                "path": "{{workspace}}"
+              },
+              "parseJson": true,
+              "prompt": "Build: {{prompt}}\n\nPlan:\n{{plan}}\n\nPrevious feedback:\n{{feedback}}\n\nWorkspace: {{workspace}}\n\nEnd your response with a JSON block reporting the build outcome:\n```json\n{\n  \"passed\": true|false,\n  \"summary\": \"Brief description of what was built or attempted\"\n}\n```\n\nOnly report passed: true if you created/modified files, all tests pass, and all prior feedback is resolved."
+            },
+            {
+              "type": "parallel",
+              "id": "inspect",
+              "steps": [
+                {
+                  "type": "routine",
+                  "id": "call_review",
+                  "target": "review",
+                  "output_as": "call_review",
+                  "input": {
+                    "changes": "{{results.builder.raw}}",
+                    "workspace": "{{workspace}}"
+                  }
+                },
+                {
+                  "type": "routine",
+                  "id": "call_verify",
+                  "target": "verify",
+                  "output_as": "call_verify",
+                  "input": {
+                    "changes": "{{task}}",
+                    "workspace": "{{workspace}}"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "open_pr",
+      "params": [
+        {
+          "name": "workspace",
+          "description": "Worktree path from run_build_loop result"
+        },
+        {
+          "name": "title",
+          "description": "PR title"
+        },
+        {
+          "name": "commit_message",
+          "description": "Commit message in conventional commits format"
+        },
+        {
+          "name": "body",
+          "description": "Markdown PR description summarizing the changes"
+        }
+      ],
+      "steps": [
+        {
+          "type": "git",
+          "id": "commit",
+          "action": "add-and-commit",
+          "cwd": "{{workspace}}",
+          "message": "{{commit_message}}"
+        },
+        {
+          "type": "shell",
+          "id": "fetch",
+          "command": "git fetch origin {{session.base}}",
+          "cwd": "{{workspace}}",
+          "failFast": true
+        },
+        {
+          "type": "shell",
+          "id": "rebase",
+          "command": "git rebase origin/{{session.base}}",
+          "cwd": "{{workspace}}",
+          "failFast": true
+        },
+        {
+          "type": "shell",
+          "id": "check-clean",
+          "command": "test -z \"$(git status --porcelain --untracked-files=all)\"",
+          "cwd": "{{workspace}}",
+          "failFast": true
+        },
+        {
+          "type": "git",
+          "id": "branch",
+          "action": "push-current",
+          "cwd": "{{workspace}}"
+        },
+        {
+          "type": "shell",
+          "id": "pr",
+          "command": "cat > /tmp/ff-pr-body-$$.md << 'FFEOF'\n{{body}}\nFFEOF\ngh pr create --title \"{{title}}\" --body-file /tmp/ff-pr-body-$$.md --base \"{{session.base}}\"; rm -f /tmp/ff-pr-body-$$.md",
+          "cwd": "{{workspace}}"
+        }
+      ]
+    },
+    {
+      "id": "destroy_workspace",
+      "params": [
+        {
+          "name": "workspace",
+          "description": "Worktree path to release"
+        }
+      ],
+      "steps": [
+        {
+          "type": "cleanup",
+          "id": "cleanup",
+          "of": "{{workspace}}"
+        }
+      ]
+    }
+  ]
+}

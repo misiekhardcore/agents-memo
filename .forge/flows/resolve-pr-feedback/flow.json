@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json",
+  "name": "resolve-pr-feedback",
+  "command": "/resolve-pr-feedback",
+  "orchestrator": {
+    "systemPrompt": "resolve-pr-feedback-orchestrator",
+    "prompt": "{{prompt}}"
+  },
+  "params": [
+    {
+      "name": "pr",
+      "description": "Pull request number to resolve feedback on"
+    }
+  ],
+  "routines": [
+    {
+      "id": "fetch_pr_comments",
+      "params": [
+        {
+          "name": "pr",
+          "description": "PR number"
+        },
+        {
+          "name": "owner",
+          "description": "Repository owner"
+        },
+        {
+          "name": "repo",
+          "description": "Repository name"
+        }
+      ],
+      "description": "Fetch unresolved PR review comments via GitHub API",
+      "steps": [
+        {
+          "type": "shell",
+          "id": "pr_info",
+          "command": "gh pr view {{pr}} --repo {{owner}}/{{repo}} --json number,title,headRefName,state,headRepository --jq '{number, title, headRefName, state, owner: (.headRepository.nameWithOwner | split(\"/\")[0]), repo: (.headRepository.nameWithOwner | split(\"/\")[1])}'",
+          "failFast": true
+        },
+        {
+          "type": "shell",
+          "id": "review_threads",
+          "command": "gh api graphql -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){nodes{id,isResolved,comments(first:50){nodes{id,body,path,diffHunk}}}}}}}' -F owner={{owner}} -F repo={{repo}} -F pr={{pr}}",
+          "failFast": true
+        }
+      ]
+    },
+    {
+      "id": "apply_feedback",
+      "params": [
+        {
+          "name": "workspace",
+          "description": "Worktree path"
+        },
+        {
+          "name": "task",
+          "description": "Task with comment details"
+        },
+        {
+          "name": "plan",
+          "description": "Implementation plan"
+        }
+      ],
+      "description": "Apply a group of feedback items via the implement pipeline",
+      "steps": [
+        {
+          "type": "routine",
+          "id": "build_loop",
+          "target": "implement.run_build_loop",
+          "output_as": "build_result",
+          "input": {
+            "workspace": "{{workspace}}",
+            "task": "{{task}}",
+            "plan": "{{plan}}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "disposition_comments",
+      "params": [
+        {
+          "name": "threadId",
+          "description": "Review thread node ID"
+        },
+        {
+          "name": "verdict",
+          "description": "fixed|fixed-differently|replied|not-addressing|needs-human"
+        },
+        {
+          "name": "reply",
+          "description": "Reply text to post"
+        }
+      ],
+      "description": "Post reply and resolve a review thread",
+      "steps": [
+        {
+          "type": "shell",
+          "id": "post_reply",
+          "command": "cat > /tmp/ff-reply-$$.md << 'FFEOF'\n{{reply}}\nFFEOF\ngh api graphql -f query='mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id}}}' -F threadId={{threadId}} -F body=@/tmp/ff-reply-$$.md; status=$?; rm -f /tmp/ff-reply-$$.md; exit $status",
+          "failFast": true
+        },
+        {
+          "type": "shell",
+          "id": "resolve_thread",
+          "command": "case \"{{verdict}}\" in fixed|fixed-differently|not-addressing) gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id}}}' -F threadId={{threadId}} ;; esac",
+          "failFast": false
+        }
+      ]
+    }
+  ]
+}

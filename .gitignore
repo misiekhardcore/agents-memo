@@ -4,6 +4,10 @@ dist/
 coverage/
 NOTES.md
 .pi
-.forge/
 *.log
 .DS_Store
+
+# Feature Forge runtime
+.forge/worktrees
+.forge/worktrees.json
+.forge/logs

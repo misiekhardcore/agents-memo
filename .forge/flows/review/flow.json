@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json",
+  "name": "review",
+  "command": "/review",
+  "orchestrator": {
+    "systemPrompt": "review-orchestrator",
+    "prompt": "{{prompt}}"
+  },
+  "routines": [
+    {
+      "id": "inspect",
+      "params": [
+        {
+          "name": "changes",
+          "description": "The code or changes to review"
+        },
+        {
+          "name": "workspace",
+          "description": "Absolute path to the workspace",
+          "optional": true,
+          "default": "."
+        }
+      ],
+      "steps": [
+        {
+          "type": "agent",
+          "id": "review",
+          "systemPrompt": "review",
+          "workingDir": {
+            "path": "{{workspace}}"
+          },
+          "parseJson": true,
+          "prompt": "Review the code for quality: correctness, architecture, standards compliance, error handling, type safety, SOLID principles, and test quality.\n\nTask:\n{{prompt}}\n\nChanges to review:\n{{changes}}"
+        }
+      ]
+    }
+  ]
+}

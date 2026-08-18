@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json",
+  "name": "verify",
+  "command": "/verify",
+  "orchestrator": {
+    "systemPrompt": "verify-orchestrator",
+    "prompt": "{{prompt}}"
+  },
+  "routines": [
+    {
+      "id": "check",
+      "params": [
+        {
+          "name": "changes",
+          "description": "The code or changes to verify"
+        },
+        {
+          "name": "workspace",
+          "description": "Absolute path to the workspace",
+          "optional": true,
+          "default": "."
+        }
+      ],
+      "steps": [
+        {
+          "type": "agent",
+          "id": "verify",
+          "systemPrompt": "verify",
+          "workingDir": {
+            "path": "{{workspace}}"
+          },
+          "parseJson": true,
+          "prompt": "Verify that every acceptance criterion and issue objective is met, and that e2e coverage is sufficient. Run e2e tests if available.\n\nTask:\n{{changes}}"
+        }
+      ]
+    }
+  ]
+}
