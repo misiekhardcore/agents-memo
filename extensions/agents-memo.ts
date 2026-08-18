@@ -82,6 +82,8 @@ interface AgentsMemoConfig {
   bootstrapReadHot?: "always" | "on-demand" | "never";
   bootstrapReadIndex?: "always" | "on-demand" | "never";
   autoCommit?: boolean;
+  // Opt-in: push the vault repo to its remote after auto-commit. Never force-pushes.
+  autoPush?: boolean;
   projectMemory?: ProjectMemoryConfig;
   reflectModel?: ReflectModelConfig;
   memoryInjection?: MemoryInjectionConfig;
@@ -235,6 +237,8 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
       }
       if (typeof block.autoCommit === "boolean" && merged.autoCommit === undefined)
         merged.autoCommit = block.autoCommit;
+      if (typeof block.autoPush === "boolean" && merged.autoPush === undefined)
+        merged.autoPush = block.autoPush;
       if (
         typeof block.similarityThreshold === "number" &&
         isFinite(block.similarityThreshold) &&
@@ -2102,6 +2106,18 @@ export default function (pi: ExtensionAPI) {
         "auto: vault changes [agents-memo]",
       ]);
       if (commit.code !== 0) return;
+      // Opt-in auto-push (issue #193 Phase 3): push the vault repo after a
+      // successful auto-commit. Never force-pushes and never retries - a failed
+      // push (e.g. the remote moved) leaves the commit local and notifies.
+      if (config.autoPush === true) {
+        const push = await pi.exec("git", ["-C", vaultPath, "push"]);
+        if (push.code !== 0 && ctx.hasUI) {
+          ctx.ui.notify(
+            "Changes committed locally, but auto-push failed - no force-push attempted",
+            "warning",
+          );
+        }
+      }
       if (ctx.hasUI) {
         ctx.ui.notify("Wiki updated - changes auto-committed", "info");
       }

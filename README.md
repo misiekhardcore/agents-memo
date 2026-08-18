@@ -31,6 +31,22 @@ obsidian list vaults
 
 See `_shared/setup.md` for troubleshooting and Flatpak setup.
 
+## Configuration
+
+All options live in the `agentsMemo` block of `~/.pi/agent/settings.json`
+(global) or `.pi/settings.json` (per-project). Global values win per key;
+project values only fill keys the global file leaves unset.
+
+|Key|Type|Default|Description|
+|-|-|-|-|
+|`vaultPath`|string|auto-discovered `wiki/` in CWD|Absolute path to the vault|
+|`bootstrapReadHot`|`"always"` \|`"on-demand"` \|`"never"`|`"on-demand"`|When the hot cache is injected at session start|
+|`bootstrapReadIndex`|`"always"` \|`"on-demand"` \|`"never"`|`"on-demand"`|When the index is injected at session start|
+|`autoCommit`|boolean|`true`|Auto-commit vault git changes when the agent settles|
+|`autoPush`|boolean|`false`|After auto-commit, push the vault repo to its remote. Never force-pushes or retries - a failed push (remote moved) leaves the commit local and shows a warning|
+
+autoPush requires the vault repo to have a remote and the current branch to have an upstream (run `git push --set-upstream origin <branch>` once).
+
 ## Skills
 
 - `wiki` — bootstrap / health-check the vault
@@ -124,20 +140,9 @@ Create `~/.config/systemd/user/wiki-lint.service` and `~/.config/systemd/user/wi
 npm install          # Install dependencies + husky pre-commit hook
 npm run build        # Compile extensions (tsup)
 npm run check        # Full validation: lint + format + typecheck + test
-npm run fix          # Auto-fix lint and formatting
 ```
 
-|Command|Purpose|
-|-|-|
-|`npm run build`|Compile TypeScript extensions to `dist/`|
-|`npm run test`|Run smoke + regression tests|
-|`npm run lint`|ESLint check|
-|`npm run format`|Prettier check|
-|`npm run typecheck`|TypeScript type-check|
-|`npm run check`|All gates (lint + format + typecheck + test)|
-|`npm run fix`|Auto-fix lint + format|
-
-Pre-commit hook runs `lint-staged`: ESLint + Prettier on staged TS/JS/JSON, minify-md on staged MD.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide (validation gates, pre-commit hook, PR process).
 
 ## More
 

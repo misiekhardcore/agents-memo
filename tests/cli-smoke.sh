@@ -85,6 +85,19 @@ if [ ! -x "$WRAPPER" ]; then
   exit 2
 fi
 
+# 0. --help contract: must short-circuit before vault resolution, so it
+#    works with no vault configured and no Obsidian running. Exits 0 and
+#    lists the wrapper verbs.
+out=$("$WRAPPER" --help 2>/dev/null); rc=$?
+assert_exit 0 "$rc" "--help exit"
+assert_contains "$out" "Usage:" "--help prints Usage:"
+assert_contains "$out" "create-or-append" "--help lists create-or-append"
+assert_contains "$out" "read-head" "--help lists read-head"
+assert_contains "$out" "grep  path=" "--help lists grep"
+
+out=$("$WRAPPER" -h 2>/dev/null); rc=$?
+assert_exit 0 "$rc" "-h exit"
+
 # Pre-flight: Obsidian must be reachable. If not, exit early with skip.
 if ! obsidian version >/dev/null 2>&1; then
   echo "smoke: skipping — obsidian binary unreachable or not running"
