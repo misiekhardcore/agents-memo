@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/cli/src/flows/flow-schema.json",
+  "$schema": "https://raw.githubusercontent.com/misiekhardcore/feature-forge/main/packages/core/src/flows/flow-schema.json",
   "name": "implement",
   "command": "/implement",
   "orchestrator": {
@@ -78,7 +78,7 @@
                 "path": "{{workspace}}"
               },
               "parseJson": true,
-              "prompt": "Build: {{prompt}}\n\nPlan:\n{{plan}}\n\nPrevious feedback:\n{{feedback}}\n\nWorkspace: {{workspace}}\n\nEnd your response with a JSON block reporting the build outcome:\n```json\n{\n  \"passed\": true|false,\n  \"summary\": \"Brief description of what was built or attempted\"\n}\n```\n\nOnly report passed: true if you created/modified files, all tests pass, and all prior feedback is resolved."
+              "prompt": "Build: {{prompt}}\n\nPlan:\n{{plan}}\n\nPrevious feedback:\n{{feedback}}\n\nWorkspace: {{workspace}}\n\nEnd your response with a JSON block reporting the build outcome:\n```json\n{\n  \"passed\": true|false,\n  \"summary\": \"Brief description of what was built or attempted\"\n}\n```\n\nDo NOT commit — leave all changes uncommitted in the working tree; the flow's commit step creates the single atomic commit at PR time.\n\nOnly report passed: true if you created/modified files, all tests pass, and all prior feedback is resolved."
             },
             {
               "type": "parallel",

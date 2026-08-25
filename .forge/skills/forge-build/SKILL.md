@@ -1,7 +1,7 @@
 ---
 name: forge-build
 description: >
-  Build methodology — TDD cycle, validation commands, commit rules,
+  Build methodology — TDD cycle, validation commands, commit policy,
   and workspace hygiene for the build agent.
 ---
 # Build Methodology
@@ -26,13 +26,11 @@ npm run typecheck
 npm run test
 ```
 
-If you modified files that have auto-generated artefacts, regenerate them and run:
-
-```bash
-git diff --exit-code
-```
-
-to verify no unintended drift.
+If you modified files that have auto-generated artefacts, regenerate them and
+compare the regeneration output against the pre-regeneration state — the diff
+must contain only the intended changes, with no unintended drift. Do NOT use
+`git diff --exit-code` for this: under the no-commit policy the working tree
+always differs from HEAD, so it would always fail.
 
 These scripts wrap the project's vitest, eslint, prettier, and tsc configurations with all necessary flags.
 
@@ -55,14 +53,15 @@ Your final JSON block must follow this structure:
 - If a validation command has no output (e.g. `npm run fix` with no fixes needed), note that explicitly: `(no output — clean)`.
 - If you modified files with auto-generated artefacts, include the regeneration output as well.
 
-## Commit Rules
+## Commit Policy — do NOT commit
 
-Stage changes and commit when all checks pass:
+Never stage or commit during the build loop — leave all changes uncommitted in the working tree.
+The flow's commit step creates the single atomic commit at PR time.
 
-```bash
-git add .
-git commit -m "implement: <task summary>"
-```
+Rationale: validation runs against the working tree, so per-subtask commits can be non-building
+slices that leave the repository in a broken state between subtasks.
+
+If committed changes exist from a prior iteration, leave them as-is — do not amend or reset.
 
 ## Workspace Hygiene
 

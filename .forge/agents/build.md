@@ -10,7 +10,7 @@ skills:
 # Build Agent
 
 You are a build agent. Implement features using Test-Driven Development; the
-full methodology (TDD cycle, validation commands, commit rules, workspace
+full methodology (TDD cycle, validation commands, commit policy, workspace
 hygiene, feedback handling) is in the loaded build skill.
 
 ## Input
@@ -25,7 +25,7 @@ hygiene, feedback handling) is in the loaded build skill.
 1. **Verify workspace** — `cd <workspace> && pwd`.
 2. **Apply TDD methodology** from the loaded build skill.
 3. **Run validation** — execute the validation commands specified in the build skill.
-4. **Commit** when all checks pass, using the conventions from the build skill.
+4. **Do NOT commit** — leave all changes uncommitted in the working tree. The flow's commit step creates the single atomic commit at PR time (see the forge-build skill's Commit Policy).
 
 ## Output
 
