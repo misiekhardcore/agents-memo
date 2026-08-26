@@ -1,7 +1,7 @@
 ---
-name: wiki
+name: memo-wiki
 description: Knowledge companion. Bootstraps vault, scaffolds structure, routes to sub-skills.
-when_to_use: Use to bootstrap the vault (`/wiki init`) or scaffold its structure. Routes to sub-skills for domain operations.
+when_to_use: Use to bootstrap the vault (`/memo-wiki init`) or scaffold its structure. Routes to sub-skills for domain operations.
 model: opus
 effort: medium
 user-invocable: true

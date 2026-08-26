@@ -49,28 +49,28 @@ autoPush requires the vault repo to have a remote and the current branch to have
 
 ## Skills
 
-- `wiki` — bootstrap / health-check the vault
-- `ingest` — parallel batch ingestion of sources
-- `query` — answer questions from vault content
-- `lint` — find orphan pages, dead links, stale claims
-- `save` — save the current conversation or insight into the vault
-- `notes` — quick inbox capture (`/note`, `/dump`); list and process flows for triage
-- `daily` — append-only chronological log (`/daily`); timestamped bullets in `daily/YYYY-MM-DD.md`
-- `daily-close` — end-of-day synthesis (`/daily-close`, "close today", "wrap up today"); appends a polished `## Summary` to today's daily file, idempotent on re-run
-- `braindump` — split long-form text into atomic notes (`/braindump`, "brain dump this", "split this into notes"); each chunk filed via the full capture pipeline
-- `autoresearch` — autonomous iterative research loop
-- `canvas` — create / update Obsidian canvas files
-- `defuddle` — strip clutter from web pages before ingestion
-- `obsidian-markdown` — correct Obsidian-flavored Markdown (wikilinks, embeds, callouts)
-- `obsidian-bases` — create / edit `.base` files
+- `memo-wiki` — bootstrap / health-check the vault
+- `memo-ingest` — parallel batch ingestion of sources
+- `memo-query` — answer questions from vault content
+- `memo-lint` — find orphan pages, dead links, stale claims
+- `memo-save` — save the current conversation or insight into the vault
+- `memo-notes` — quick inbox capture (`/memo-note`, `/memo-dump`); list and process flows for triage
+- `memo-daily` — append-only chronological log (`/memo-daily`); timestamped bullets in `daily/YYYY-MM-DD.md`
+- `memo-daily-close` — end-of-day synthesis (`/memo-daily-close`, "close today", "wrap up today"); appends a polished `## Summary` to today's daily file, idempotent on re-run
+- `memo-braindump` — split long-form text into atomic notes (`/memo-braindump`, "brain dump this", "split this into notes"); each chunk filed via the full capture pipeline
+- `memo-autoresearch` — autonomous iterative research loop
+- `memo-canvas` — create / update Obsidian canvas files
+- `memo-defuddle` — strip clutter from web pages before ingestion
+- `memo-obsidian-markdown` — correct Obsidian-flavored Markdown (wikilinks, embeds, callouts)
+- `memo-obsidian-bases` — create / edit `.base` files
 
 ## Vault structure
 
 ```text
 <vault_path>/
   wiki/          agent-generated knowledge (hot.md, index.md, concepts/, entities/, sources/)
-  notes/         inbox: verbatim quick-capture notes (owned by `notes` skill)
-  daily/         chronological daily log — one file per day (owned by `daily` skill)
+  notes/         inbox: verbatim quick-capture notes (owned by `memo-notes` skill)
+  daily/         chronological daily log — one file per day (owned by `memo-daily` skill)
   .raw/          immutable source documents + .manifest.json
   _templates/    Obsidian Templater templates
   _attachments/  images + PDFs referenced by wiki pages
@@ -96,14 +96,14 @@ is human-editable.
 
 ## Real-world example
 
-1. **Ingest** - during a project, run `/ingest <api-spec-url>` (or `obsidian
-   create path=wiki/sources/...`). The ingest skill extracts entities and
+1. **Ingest** - during a project, run `/memo-ingest <api-spec-url>` (or `obsidian
+   create path=wiki/sources/...`). The memo-ingest skill extracts entities and
    concepts into `wiki/concepts/` and `wiki/entities/` and cross-references
    them.
-2. **Query** - days or weeks later, ask `/query` "what does the API return
-   for auth failures?". The query skill searches wiki pages and synthesizes
+2. **Query** - days or weeks later, ask `/memo-query` "what does the API return
+   for auth failures?". The memo-query skill searches wiki pages and synthesizes
    an answer with citations.
-3. **Save** - `/save` files the conversation or insight back into the vault.
+3. **Save** - `/memo-save` files the conversation or insight back into the vault.
 4. **Commit** - every write is auto-committed to git, so the vault is a
    versioned, searchable memory that grows with each session.
 
@@ -122,7 +122,7 @@ Also registers the `memo_dispatch` tool for delegating work to vault sub-agents 
 
 ## Scheduled Maintenance
 
-Lint is **opt-in via OS scheduler** (cron, systemd timers, launchd). Use `bin/wiki-lint-cron.sh` to run the lint skill with auto-fix and commit.
+Lint is **opt-in via OS scheduler** (cron, systemd timers, launchd). Use `bin/wiki-lint-cron.sh` to run the memo-lint skill with auto-fix and commit.
 
 **Example crontab (weekly, Sunday 03:00):**
 ```cron

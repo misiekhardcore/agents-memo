@@ -1,6 +1,6 @@
 ---
 name: memory-capture
-description: Single CAPTURE-pipeline worker. Takes one chunk and files it as an atomic inbox note. Dispatched by `braindump` for parallel processing when chunks are independent.
+description: Single CAPTURE-pipeline worker. Takes one chunk and files it as an atomic inbox note. Dispatched by `memo-braindump` for parallel processing when chunks are independent.
 model: haiku
 maxTurns: 10
 permissions: 
@@ -8,7 +8,7 @@ permissions:
 disallowedTools: Agent Read Write Edit Glob Grep WebFetch WebSearch
 background: true
 ---
-File exactly **one** atomic inbox note into the vault. Do NOT patch `notes/index.md` — the braindump orchestrator applies a single consolidated index patch after all agents complete.
+File exactly **one** atomic inbox note into the vault. Do NOT patch `notes/index.md` — the memo-braindump orchestrator applies a single consolidated index patch after all agents complete.
 
 ## CWD verification (required)
 

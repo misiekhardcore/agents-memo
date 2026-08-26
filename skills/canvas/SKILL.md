@@ -1,5 +1,5 @@
 ---
-name: canvas
+name: memo-canvas
 description: Visual layer of the wiki. Add images, text cards, PDFs, and wiki pages to canvas files with zones.
 when_to_use: Use to create or modify `.canvas` files, add nodes, organize zones.
 model: haiku
@@ -14,7 +14,7 @@ Visual layer of the wiki. Add images, text cards, PDFs, wiki pages to infinite v
 - Output: Modified/created `.canvas` file.
 
 ## Process
-1. **Open**: `/canvas` → list existing canvases. `/canvas new [name]` → create slug, write `wiki/canvases/<slug>.canvas`, append to dashboard. See `references/operations.md` § Status & Create.
+1. **Open**: `/memo-canvas` → list existing canvases. `/memo-canvas new [name]` → create slug, write `wiki/canvases/<slug>.canvas`, append to dashboard. See `references/operations.md` § Status & Create.
 2. **Add**: Select node type per `references/operations.md` § Add to Canvas — image, text, pdf, note, zone, list, from-banana. Dimensions and colors per `references/node-templates.md`.
 3. **Position**: Per `references/operations.md` § Auto-positioning. Read canvas, find target zone, flow left-to-right with row wrapping. Auto-detect aspect ratio for images. Report position and zone.
 4. **Commit**: Parse JSON, append new node, write atomically. Update `wiki/index.md` for new canvases only.

@@ -35,7 +35,7 @@ Source: `backlinks` map in JSON (pre-computed). For every in-scope page, compare
 
 ## Check #11: Hub Promotion Candidates
 
-Group all leaves under `wiki/concepts/`, `wiki/entities/`, `wiki/solutions/`, `wiki/sources/` by primary tag (first non-type tag in `tags:`). For each tag-cluster of **≥ 10 leaves**, check whether `wiki/domains/<cluster-tag>/_index.md` exists. If not, surface as promotion candidate — suggest `/wiki promote <tag>`.
+Group all leaves under `wiki/concepts/`, `wiki/entities/`, `wiki/solutions/`, `wiki/sources/` by primary tag (first non-type tag in `tags:`). For each tag-cluster of **≥ 10 leaves**, check whether `wiki/domains/<cluster-tag>/_index.md` exists. If not, surface as promotion candidate — suggest `/memo-wiki promote <tag>`.
 
 ## Check #12: Hub Stale-Count Drift
 
@@ -71,7 +71,7 @@ Type → expected section mapping:
 - **Strays** — entries with no preceding H2 (above first heading) flag as `entry above all sections, expected under <Section>`.
 - **Misplacements** — entries under non-matching section flag as `entry under <Current> but type=<X> expects <Expected>`.
 
-Role: safety net, not primary placement. `/save` writes entries directly under correct section. Auto-fix policy: **ask-first**.
+Role: safety net, not primary placement. `/memo-save` writes entries directly under correct section. Auto-fix policy: **ask-first**.
 
 ## Check #16: Trail Integrity
 

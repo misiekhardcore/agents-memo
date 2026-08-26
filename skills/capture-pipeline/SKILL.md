@@ -1,6 +1,6 @@
 ---
-name: capture-pipeline
-description: Protocol skill — run CAPTURE pipeline for verbatim chunks. Called from /braindump.
+name: memo-capture-pipeline
+description: Protocol skill — run CAPTURE pipeline for verbatim chunks. Called from /memo-braindump.
 user-invocable: false
 ---
 Protocol skill for capture surfaces. Handles agent vs inline decision, per-chunk MATCH/NEW, index patching. Not user-invocable; Read `${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md` first, then follow its pipeline.

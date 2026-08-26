@@ -7,7 +7,7 @@ Atomic thought = one self-contained idea. Split when topic/claim/referent shifts
 Zero chunks (unexpected empty result from reasoning step) → hard-abort, no retry:
 
 ```text
-/braindump split returned no chunks. Original text not captured.
+/memo-braindump split returned no chunks. Original text not captured.
 ```
 
 ## Examples

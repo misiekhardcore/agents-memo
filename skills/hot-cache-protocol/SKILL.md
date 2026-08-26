@@ -1,5 +1,5 @@
 ---
-name: hot-cache-protocol
+name: memo-hot-cache-protocol
 description: Hot cache protocol — when to read/update wiki/hot.md, auto-read gating, format, parallel worker discipline.
 user-invocable: false
 ---
@@ -46,7 +46,7 @@ At end of every content-changing operation. **Orchestrator writes once after all
 |Lint (fixed)|Skill|After report + fixes|
 |Session end|Agent|Before close|
 
-Required: update at end of ingest/autoresearch for next-session performance.
+Required: update at end of memo-ingest/memo-autoresearch for next-session performance.
 
 ## Format
 

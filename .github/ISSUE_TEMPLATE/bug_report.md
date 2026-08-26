@@ -12,7 +12,7 @@ body:
     attributes:
       label: Description
       description: What happened, and what did you expect to happen?
-      placeholder: "e.g. /ingest hangs after fetching the page, no error is shown"
+      placeholder: e.g. /memo-ingest hangs after fetching the page, no error is shown
     validations:
       required: true
   - type: textarea
@@ -21,7 +21,7 @@ body:
       description: Minimal steps that trigger the issue.
       placeholder: |
         1. Run `pi` in a project with a configured vault
-        2. Invoke /ingest on a URL
+        2. Invoke /memo-ingest on a URL
         3. Observe the failure
     validations:
       required: true
@@ -29,12 +29,12 @@ body:
     attributes:
       label: Environment
       description: pi version, Node version, Obsidian version, OS
-      placeholder: "pi 0.84.x, Node 22.x, Obsidian 1.12.7+, Linux"
+      placeholder: pi 0.84.x, Node 22.x, Obsidian 1.12.7+, Linux
   - type: textarea
     attributes:
       label: Relevant skills / commands
-      description: Which skill or CLI verb was involved (e.g. /ingest, obsidian read)?
-      placeholder: "/ingest, obsidian read path=wiki/hot.md"
+      description: Which skill or CLI verb was involved (e.g. /memo-ingest, obsidian read)?
+      placeholder: /memo-ingest, obsidian read path=wiki/hot.md
   - type: textarea
     attributes:
       label: Logs / output
@@ -47,3 +47,4 @@ body:
         - label: I checked the existing issues for a duplicate
         - label: I reproduced this with a minimal example
 ---
+

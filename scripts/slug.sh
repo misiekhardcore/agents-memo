@@ -2,8 +2,8 @@
 # slug.sh — Vault filename slug generator.
 #
 # Generates a 40-char-max slug from a title, with a body-derived fallback
-# when the title slugifies to empty. Used by /note (sub-issue #61) and the
-# capture pipeline shared by /daily and /braindump (sub-issue #62).
+# when the title slugifies to empty. Used by /memo-note (sub-issue #61) and the
+# capture pipeline shared by /memo-daily and /memo-braindump (sub-issue #62).
 #
 # Usage:
 #   slug.sh "<title>" [<fallback-body>]

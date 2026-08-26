@@ -26,7 +26,7 @@ Abort if output ≠ `VAULT_ROOT`.
 
 ## Workflow
 
-Sub-agent equivalent of the `memory-search` skill. Implements the same protocol for sub-context dispatch.
+Sub-agent equivalent of the `memo-memory-search` skill. Implements the same protocol for sub-context dispatch.
 
 1. **Read `wiki/hot.md`.** If it answers the question, respond immediately with `[[hot]]` and skip all following steps.
 
@@ -65,7 +65,7 @@ Gap: <what's missing, or "none">
 If the vault lacks the answer, the `Gap` field identifies what's missing. Do not fabricate.
 
 If the question needs deeper synthesis than a quick lookup provides, append:
-"This needs deeper treatment — run `skills/query/SKILL.md` or /query."
+"This needs deeper treatment — run `skills/query/SKILL.md` or /memo-query."
 
 ## References
 

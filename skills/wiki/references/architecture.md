@@ -2,7 +2,7 @@
 
 - **Truth**: Directory map, page-type table, and semantics in `_shared/vault-structure.md`.
 - **Peers**: `notes/` (inbox), `daily/` (log).
-- **Canvas**: `.canvas` files are first-class documents. `canvas` skill owns them.
+- **Canvas**: `.canvas` files are first-class documents. `memo-canvas` skill owns them.
 - **Sources**: `.raw/` folders are hidden and immutable.
 
 ## Hot Cache

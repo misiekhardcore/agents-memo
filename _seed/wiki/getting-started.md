@@ -34,7 +34,7 @@ Put any document into the `.raw/` folder:
 
 ### 2. Ingest it
 
-Tell Claude in any Claude Code session:
+Tell your agent in any session:
 
 ```text
 ingest [filename]
@@ -61,9 +61,9 @@ Update it manually at any time: `update hot cache`
 ## Your First Ingest — Walkthrough
 
 1. Create a file in `.raw/` — copy a transcript, paste an article, or save a PDF
-2. Open Claude Code in this vault folder
-3. Type: `ingest [your-filename]`
-4. Watch the wiki grow — Claude will report which pages it created
+2. Open pi in this vault folder
+3. Type: `/memo-ingest [your-filename]`
+4. Watch the wiki grow — the agent will report which pages it created
 5. Open `wiki/index.md` — you'll see the new pages listed
 6. Open Graph View in Obsidian — a new cluster of connected nodes appears
 
@@ -73,10 +73,10 @@ After 3–5 ingests, the graph starts to look like a real knowledge network. Cro
 
 |You say|Claude does|
 |-|-|
-|`ingest [file]`|Creates 8–15 wiki pages from a source|
+|`/memo-ingest [file]`|Creates 8–15 wiki pages from a source|
 |`what do you know about X?`|Queries the wiki, cites pages|
-|`/save`|Files this conversation as a wiki note|
-|`/autoresearch [topic]`|Searches the web, ingests results autonomously|
+|`/memo-save`|Files this conversation as a wiki note|
+|`/memo-autoresearch [topic]`|Searches the web, ingests results autonomously|
 |`lint the wiki`|Health check — finds orphans, gaps, stale links|
 |`update hot cache`|Refreshes the session context summary|
 

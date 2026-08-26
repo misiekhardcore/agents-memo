@@ -1,14 +1,14 @@
 ---
-name: daily
+name: memo-daily
 description: Append a timestamped bullet to today's daily log. One line per call.
-when_to_use: '"/daily <text>", "log this", "add to today''s log". Append-only — no list or triage.'
+when_to_use: '"/memo-daily <text>", "log this", "add to today''s log". Append-only — no list or triage.'
 model: haiku
 effort: low
 user-invocable: true
 argument-hint: "[text]"
 allowed-tools: Bash Read
 ---
-Append timestamped bullet to `daily/YYYY-MM-DD.md`. Use `/daily` for time-anchored observations, `/note` for knowledge fragments.
+Append timestamped bullet to `daily/YYYY-MM-DD.md`. Use `/memo-daily` for time-anchored observations, `/memo-note` for knowledge fragments.
 
 ## I/O
 - Input: Verbatim text, optional image paths.

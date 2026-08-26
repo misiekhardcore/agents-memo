@@ -6,8 +6,8 @@
 # and writes back via `obsidian create overwrite=true`. If the heading is
 # absent, appends `<heading>\n<entry>` at the end of the file.
 #
-# Used by /save (skills/save/SKILL.md step 7) and /wiki promote
-# (skills/wiki/references/operation-promote.md step 7) to maintain
+# Used by /memo-save (skills/save/SKILL.md step 7) and /memo-wiki promote
+# (skills/wiki/references/promote.md step 7) to maintain
 # wiki/index.md without misplacing entries — `obsidian prepend` is
 # whole-file, not section-aware.
 #

@@ -1,6 +1,6 @@
 ---
 name: memory-gather
-description: Reads memory files and returns structured summary. Read-only. Used by `daily-close` (dated notes/pages) and `query` deep mode (candidate page clusters). One agent per cluster.
+description: Reads memory files and returns structured summary. Read-only. Used by `memo-daily-close` (dated notes/pages) and `memo-query` deep mode (candidate page clusters). One agent per cluster.
 model: haiku
 maxTurns: 15
 permissions: 

@@ -95,7 +95,7 @@ done
 VAULT=$(expand_tilde "$VAULT")
 
 if [ -z "$VAULT" ]; then
-  echo "agents-memo: no vault configured — run /wiki init to set up" >&2
+  echo "agents-memo: no vault configured — run /memo-wiki init to set up" >&2
   exit 1
 fi
 echo "$VAULT"

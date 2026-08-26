@@ -1,6 +1,6 @@
 # MATCH/NEW Heuristic
 
-Used by `/note` and `/braindump`. `/daily` is append-only (no MATCH/NEW).
+Used by `/memo-note` and `/memo-braindump`. `/memo-daily` is append-only (no MATCH/NEW).
 
 ## Enumeration
 

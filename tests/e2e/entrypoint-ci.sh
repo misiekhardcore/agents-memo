@@ -29,7 +29,16 @@ rm -rf "$VAULT_PATH"
 mkdir -p "$VAULT_PATH"
 MEMO_PLUGIN_PWD="$PLUGIN_SRC" bash "$PLUGIN_SRC/bin/setup-vault.sh" "$VAULT_PATH"
 
-# 3. Seed the two files cli-smoke.sh assumes exist (`wiki/hot.md` for the
+# 3. Point the wrapper's vault resolution at the scaffolded vault. The pi
+# settings tier (~/.pi/agent/settings.json, agentsMemo.vaultPath) is the
+# extension's documented config path; scripts/resolve-vault.sh reads it as
+# tier 0a. The former Claude Code plugin wiring that supplied the vault path
+# via ~/.claude/settings.json was removed with the local e2e tier.
+mkdir -p "$HOME/.pi/agent"
+# Emit via jq so VAULT_PATH is JSON-escaped (jq ships in the CI image).
+jq -n --arg v "$VAULT_PATH" '{agentsMemo: {vaultPath: $v}}' > "$HOME/.pi/agent/settings.json"
+
+# 4. Seed the two files cli-smoke.sh assumes exist (`wiki/hot.md` for the
 # read+probe assertions, `wiki/index.md` for the backlinks assertion).
 # Per #89 Decision: skip seed-demo.sh; supply only what the smoke needs.
 # hot.md links to index.md so the backlinks query returns a non-empty result —
@@ -45,10 +54,10 @@ EOF
 fi
 [ -f "$VAULT_PATH/wiki/index.md" ] || echo "# Wiki index" > "$VAULT_PATH/wiki/index.md"
 
-# 4. Register vault with Obsidian (writes ~/.config/obsidian/obsidian.json).
+# 5. Register vault with Obsidian (writes ~/.config/obsidian/obsidian.json).
 bash /e2e/register-vault.sh "$VAULT_PATH"
 
-# 5. Boot Xvfb + D-Bus + Obsidian.
+# 6. Boot Xvfb + D-Bus + Obsidian.
 echo "entrypoint-ci: starting Xvfb on $DISPLAY_NUM"
 Xvfb "$DISPLAY_NUM" -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
 XVFB_PID=$!
@@ -104,14 +113,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# 6. Probe readiness (60s cap per AC13).
+# 7. Probe readiness (60s cap per AC13).
 if ! bash /e2e/wait-for-obsidian.sh; then
   echo "entrypoint-ci: readiness probe failed; tail of Obsidian log:" >&2
   tail -100 /tmp/obsidian.log >&2 || true
   exit 1
 fi
 
-# 7. Run cli-smoke.sh and inherit its exit code (AC10).
+# 8. Run cli-smoke.sh and inherit its exit code (AC10).
 echo "entrypoint-ci: running tests/cli-smoke.sh"
 SMOKE_RC=0
 bash "$PLUGIN_SRC/tests/cli-smoke.sh" || SMOKE_RC=$?

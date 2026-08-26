@@ -1,5 +1,5 @@
 ---
-name: image-capture
+name: memo-image-capture
 description: Image capture mechanics — validation, attachment directory, vision-LLM, move/naming, embed syntax, frontmatter field.
 user-invocable: false
 ---
@@ -14,7 +14,7 @@ Validate ALL image paths before any vision-LLM call or file move:
 - Path exists and is a readable regular file → continue.
 - Path exists but unsupported extension:
   ```text
-  Unsupported input type: <ext>. /braindump and capture skills accept text, markdown, and image inputs.
+  Unsupported input type: <ext>. /memo-braindump and capture skills accept text, markdown, and image inputs.
   ```
 - Path missing, unreadable, or not a regular file:
   ```text
@@ -28,7 +28,7 @@ Abort on any error. No vision-LLM call, no file move occurs in either error case
 1. Resolve `<vault_root>` per `${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md` §1
 2. Ensure `<vault_root>/_attachments/` exists; create silently if absent
 
-For `/braindump`: create once before CAPTURE loop, not per chunk.
+For `/memo-braindump`: create once before CAPTURE loop, not per chunk.
 
 ## Vision-LLM invocation
 
@@ -49,18 +49,18 @@ Move (not copy) images from their source path to `<vault_root>/_attachments/`. N
 
 Use `![[filename.png]]` in note body.
 
-- `/note` and `/braindump`: embeds at end, after vision description, in input order
-- `/daily`: embed(s) indented two spaces under the `HH:MM <description>` bullet; all images for one capture go under the same bullet in input order
+- `/memo-note` and `/memo-braindump`: embeds at end, after vision description, in input order
+- `/memo-daily`: embed(s) indented two spaces under the `HH:MM <description>` bullet; all images for one capture go under the same bullet in input order
 
 ## `attachments:` frontmatter field
 
-For `/note` and `/braindump` notes: add (or extend) an `attachments:` list in frontmatter when images are present:
+For `/memo-note` and `/memo-braindump` notes: add (or extend) an `attachments:` list in frontmatter when images are present:
 
 ```yaml
 attachments: ["filename1.png", "filename2.png"]
 ```
 
-`/daily` does NOT include an `attachments:` field — daily files are append-only logs, not structured knowledge objects.
+`/memo-daily` does NOT include an `attachments:` field — daily files are append-only logs, not structured knowledge objects.
 
 ## MATCH path with images
 

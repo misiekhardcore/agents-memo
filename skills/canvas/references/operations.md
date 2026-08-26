@@ -10,9 +10,9 @@ obsidian read-canvas path=wiki/canvases/<name>.canvas
 
 ## Status & Create
 
-**`/canvas`**: List `find wiki/canvases -name "*.canvas"`. If exactly one canvas exists, read it via `obsidian read-canvas`. If multiple, list and ask. Report node counts and zone labels.
+**`/memo-canvas`**: List `find wiki/canvases -name "*.canvas"`. If exactly one canvas exists, read it via `obsidian read-canvas`. If multiple, list and ask. Report node counts and zone labels.
 
-**`/canvas new [name]`**: Slugify name, create `wiki/canvases/[slug].canvas`, append to `wiki/meta/dashboard.md`.
+**`/memo-canvas new [name]`**: Slugify name, create `wiki/canvases/[slug].canvas`, append to `wiki/meta/dashboard.md`.
 
 ## Add to Canvas
 
@@ -59,9 +59,9 @@ Create group node at max_y + 60 (or 280 if no nodes). Width 1000, height 400. Co
 
 ## Banana Integration
 
-After any `/banana` run, if the user says "add to canvas", treat it as `/canvas from banana`. When `/banana` finishes, suggest:
+After any `/banana` run, if the user says "add to canvas", treat it as `/memo-canvas from banana`. When `/banana` finishes, suggest:
 
-> "Add generated images to canvas? Run `/canvas from banana`"
+> "Add generated images to canvas? Run `/memo-canvas from banana`"
 
 ## Session Log
 

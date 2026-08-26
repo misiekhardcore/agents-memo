@@ -1,5 +1,5 @@
 ---
-name: defuddle
+name: memo-defuddle
 description: Strip ads, nav, boilerplate from web pages. Saves 40-60% tokens. Use before URL ingestion.
 when_to_use: Before ingesting a URL to strip ads, navigation, and boilerplate.
 model: haiku
@@ -21,4 +21,4 @@ Extract clean markdown from web pages. Optional but saves 40-60% tokens and prod
 ## Rules
 - Use for articles/blogs/docs with surrounding content. Skip for clean markdown/PDF, dashboards, structured data.
 - If not installed, use WebFetch directly — less clean but workable.
-- `/ingest` calls defuddle automatically when available.
+- `/memo-ingest` calls defuddle automatically when available.

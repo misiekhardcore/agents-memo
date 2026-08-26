@@ -12,7 +12,7 @@
  *   - agent_settled: auto-commits vault git changes and notifies.
  *   - agent_end: distills the run into project + global cores (reflection).
  *   - session_shutdown: end-of-session daily marker + cross-project
- *     promotion sweep into wiki/global-core.md (§9.6); /wiki promote-global
+ *     promotion sweep into wiki/global-core.md (§9.6); /memo-wiki promote-global
  *     triggers the same sweep on demand.
  *
  * API surface: @earendil-works/pi-coding-agent (installed pi@0.83.0). Validated
@@ -88,7 +88,7 @@ interface AgentsMemoConfig {
   reflectModel?: ReflectModelConfig;
   memoryInjection?: MemoryInjectionConfig;
   pageCandidacy?: PageCandidacyConfig;
-  // Jaccard bigram similarity threshold for /wiki compact-core.
+  // Jaccard bigram similarity threshold for /memo-wiki compact-core.
   similarityThreshold?: number;
   // Auto-compact the project core on session_shutdown when the number of
   // near-duplicate pairs at or above this threshold exceeds 0.
@@ -1718,7 +1718,7 @@ export function buildDigest(
   // (the store's stable-truth pool, not just the bullets shown in the digest).
   const candidates = globalCore.learnings.filter((e) => e.score >= threshold).length;
   const header = `[agents-memo memory]\n## Project learnings (${slug})\n## Global learnings`;
-  const pointer = `\n\nPage candidates: ${candidates} (score >= ${threshold}) — promote via /save or ask the agent\nFull memory on demand: /query or obsidian search.`;
+  const pointer = `\n\nPage candidates: ${candidates} (score >= ${threshold}) — promote via /memo-save or ask the agent\nFull memory on demand: /memo-query or obsidian search.`;
   const bullets = [...projTop.map((e) => `- ${e.text}`), ...globalTop.map((e) => `- ${e.text}`)];
 
   // Truncate to digestBudgetChars at bullet boundaries: drop lowest-ranked
@@ -2190,11 +2190,11 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // ── AC-PM: promotion sweep command (/wiki promote-global) ─────────────────
+  // ── AC-PM: promotion sweep command (/memo-wiki promote-global) ────────────
   // Deterministic cross-project promotion (§9.6): entries present in
   // >= promotionThreshold project cores move into wiki/global-core.md with a
   // provenance marker. On-demand counterpart of the session_shutdown trigger.
-  pi.registerCommand("wiki promote-global", {
+  pi.registerCommand("memo-wiki promote-global", {
     description:
       "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
     handler: async (_args, ctx) => {
@@ -2228,11 +2228,11 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── /wiki compact-core ───────────────────────────────────────────────────
+  // ── /memo-wiki compact-core ──────────────────────────────────────────────
   // Merge near-duplicate bullets in the project core whose raw text has
   // Jaccard bigram similarity >= similarityThreshold. On-demand compact,
   // replay-safe: a second run with the same config is a no-op.
-  pi.registerCommand("wiki compact-core", {
+  pi.registerCommand("memo-wiki compact-core", {
     description: "Merge near-duplicate entries in the project core (Jaccard bigram similarity)",
     handler: async (_args, ctx) => {
       const vaultPath = getVaultPath(ctx.cwd);
