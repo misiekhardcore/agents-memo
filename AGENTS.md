@@ -57,7 +57,7 @@ All skills live in `skills/<name>/SKILL.md` and are auto-discovered by the harne
 
 |Skill|Trigger phrases|
 |-|-|
-|`memo-wiki`|`/memo-wiki`, set up wiki, scaffold vault, check setup|
+|`memo-wiki`|`/memo-wiki`, route vault operations, promote tags, check setup; vault setup via `/memo:init`|
 |`memo-ingest`|ingest, ingest this url, ingest this image, batch ingest|
 |`memo-query`|query, what do you know about, query quick:, query deep:|
 |`memo-lint`|lint the wiki, health check, find orphans, dead links|
@@ -106,7 +106,9 @@ See `_shared/documentation-standards.md`. All skill and reference docs follow th
 
 ## Cross-Project Access
 
-Add to other projects' `.pi/agent/settings.json`:
+Add this block to other projects' `AGENTS.md` (pi loads it when the project is
+CWD; `~/.pi/agent/AGENTS.md` for global coverage). `/memo:init` offers to
+append it automatically when initializing from inside a consumer project:
 ```markdown
 ## Wiki Knowledge Base
 Path: /path/to/vault

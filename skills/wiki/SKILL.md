@@ -1,7 +1,7 @@
 ---
 name: memo-wiki
-description: Knowledge companion. Bootstraps vault, scaffolds structure, routes to sub-skills.
-when_to_use: Use to bootstrap the vault (`/memo-wiki init`) or scaffold its structure. Routes to sub-skills for domain operations.
+description: Knowledge companion. Routes operations to sub-skills, promotes tags, maintains the wiki.
+when_to_use: Use to route vault operations (query, notes, daily, ingest, lint, canvas) to sub-skills, or to promote tags into wiki hubs. For vault initialization, tell the user to run /memo:init — the extension command owns setup.
 model: opus
 effort: medium
 user-invocable: true
@@ -10,15 +10,14 @@ allowed-tools: Bash Read
 Build and maintain persistent, compounding wiki in Obsidian vault. Wiki is product; chat is interface.
 
 ## I/O
-- Input: User request (init, scaffold, promote tag, or route to sub-skill).
-- Output: Vault structure, wiki pages, or sub-skill dispatch.
+- Input: User request (route to sub-skill, promote tag).
+- Output: Sub-skill dispatch, wiki hubs, index/log updates.
 
 ## Process
 1. **Route**: Map user request to sub-skill per the operations routing table in `references/architecture.md`.
-2. **INIT**: `bash "${MEMO_PLUGIN_PWD}/bin/wiki-init.sh" "${user_config.vault_path}"` — idempotent vault bootstrap.
-3. **SCAFFOLD**: Per `references/scaffold.md` — 10-step procedure (folders, seed files, git init).
-4. **PROMOTE**: Per `references/promote.md` — tag resolution, leaf collection, hub creation, index registration.
-5. **Maintain**: Update hot cache and index/log after every operation.
+2. **INIT**: If the user asks to initialize or scaffold a vault, do NOT run setup yourself — tell them to run `/memo:init` (the extension command). It bootstraps the vault, git-inits it, writes the vault `AGENTS.md`, and offers the weekly lint cron.
+3. **PROMOTE**: Per `references/promote.md` — tag resolution, leaf collection, hub creation, index registration.
+4. **Maintain**: Update hot cache and index/log after every operation.
 
 ## Rules
 - Never modify `.raw/`.

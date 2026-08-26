@@ -1505,14 +1505,14 @@ section("PM2-sweep — cross-project promotion");
     assert(sweepPromoteGlobal(VAULT, 2).promoted === 0, "project read failure → that project skipped");
     failReads.delete("wiki/projects/sweep-b/core.md");
 
-    // /memo-wiki promote-global command: registered with a description and wired
+    // /memo:promote-global command: registered with a description and wired
     // to the same sweep. The AC17-invalidation section leaves the module's
     // cached vault pointing at a scratch cwd; firing session_shutdown (which
     // clears the cache after re-resolving) makes the handler re-resolve to
     // the restored VAULT settings on its next getVaultPath().
     mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx));
-    const cmd = mock.commands.find((c) => c.name === "memo-wiki promote-global");
-    assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki promote-global registered with description");
+    const cmd = mock.commands.find((c) => c.name === "memo:promote-global");
+    assert(!!cmd && !!cmd?.opts?.description, "/memo:promote-global registered with description");
     projectFiles.delete("wiki/global-core.md");
     await cmd.opts.handler("", mock.ctx);
     const afterCmd = projectFiles.get("wiki/global-core.md") ?? "";
@@ -1667,10 +1667,17 @@ section("core-compact — compactCoreFile round-trip");
   projectFiles.delete(relPath);
 }
 
+section("init — command registration");
+{
+  const cmd = mock.commands.find((c) => c.name === "memo:init");
+  assert(!!cmd && !!cmd?.opts?.description, "/memo:init registered with description");
+  assert(cmd.opts.description.includes("lint cron"), "init description mentions the lint cron");
+}
+
 section("core-compact — command registration + config defaults");
 {
-  const cmd = mock.commands.find((c) => c.name === "memo-wiki compact-core");
-  assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki compact-core registered with description");
+  const cmd = mock.commands.find((c) => c.name === "memo:compact-core");
+  assert(!!cmd && !!cmd?.opts?.description, "/memo:compact-core registered with description");
   assert(cmd.opts.description.includes("near-duplicate"), "description mentions near-duplicate merging");
 
   const cfg = memoMod.readPiSettings();

@@ -35,6 +35,9 @@ fi
 # relative path. Skip files that already exist. Substitute {{today}}.
 while IFS= read -r -d '' src; do
   rel="${src#$SEED_DIR/}"
+  # The vault AGENTS.md template is owned by /memo:init, which substitutes
+  # {{PLUGIN_ROOT}}/{{VAULT_PATH}} — never seed the raw template here.
+  [ "$rel" = "AGENTS.md" ] && continue
   dst="$VAULT/$rel"
   [ -e "$dst" ] && continue
   mkdir -p "$(dirname "$dst")"

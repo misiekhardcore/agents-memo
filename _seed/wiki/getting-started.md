@@ -30,7 +30,7 @@ The canvas shows you (yellow) interacting through capture surfaces (yellow) that
 Put any document into the `.raw/` folder:
 
 - PDFs, markdown files, transcripts, articles
-- Or paste a URL and ask Claude to fetch it
+- Or paste a URL and ask your agent to fetch it
 
 ### 2. Ingest it
 
@@ -40,7 +40,7 @@ Tell your agent in any session:
 ingest [filename]
 ```
 
-Claude reads the source, creates 8–15 wiki pages under `wiki/`, cross-references everything, and updates `wiki/index.md`, `wiki/log.md`, and `wiki/hot.md`.
+your agent reads the source, creates 8–15 wiki pages under `wiki/`, cross-references everything, and updates `wiki/index.md`, `wiki/log.md`, and `wiki/hot.md`.
 
 ### 3. Ask questions
 
@@ -48,13 +48,13 @@ Claude reads the source, creates 8–15 wiki pages under `wiki/`, cross-referenc
 what do you know about [topic]?
 ```
 
-Claude reads the hot cache, scans the index, drills into relevant pages, and gives you a synthesized answer — citing specific wiki pages, not training data.
+your agent reads the hot cache, scans the index, drills into relevant pages, and gives you a synthesized answer — citing specific wiki pages, not training data.
 
 ## How the Hot Cache Works
 
 `wiki/hot.md` is a ~500-word summary of recent vault context. It loads automatically at the start of every session (via the SessionStart hook).
 
-You don't need to recap. Claude starts every session knowing what you've been working on.
+You don't need to recap. your agent starts every session knowing what you've been working on.
 
 Update it manually at any time: `update hot cache`
 
@@ -71,7 +71,7 @@ After 3–5 ingests, the graph starts to look like a real knowledge network. Cro
 
 ## Key Commands
 
-|You say|Claude does|
+|You say|Your agent does|
 |-|-|
 |`/memo-ingest [file]`|Creates 8–15 wiki pages from a source|
 |`what do you know about X?`|Queries the wiki, cites pages|
@@ -83,7 +83,7 @@ After 3–5 ingests, the graph starts to look like a real knowledge network. Cro
 ## Next Steps
 
 - Open **[[index]]** for the master catalog of every page in your vault.
-- Read **[[hot]]** to see what context Claude is currently carrying into sessions.
+- Read **[[hot]]** to see what context your agent is currently carrying into sessions.
 - Drop your first source into `.raw/` and run an ingest.
 
 _Built on the LLM Wiki pattern by Andrej Karpathy: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f_

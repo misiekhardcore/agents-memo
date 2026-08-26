@@ -20,7 +20,16 @@
  */
 
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1762,6 +1771,52 @@ function appendDailyReflection(vaultPath: string, label: string): void {
 }
 
 // ─── Extension entry point ────────────────────────────────────────────────────
+// ─── Init helpers (memo:init command) ────────────────────────────────────────
+function persistVaultPath(vaultPath: string): boolean {
+  const file = join(homedir(), ".pi", "agent", "settings.json");
+  try {
+    let parsed: Record<string, unknown> = {};
+    if (existsSync(file)) {
+      parsed = JSON.parse(readFileSync(file, "utf-8")) as Record<string, unknown>;
+    }
+    const agentsMemo = (parsed.agentsMemo as Record<string, unknown>) ?? {};
+    agentsMemo.vaultPath = vaultPath;
+    parsed.agentsMemo = agentsMemo;
+    writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runScript(script: string, args: string[]): string {
+  const quoted = args.map((a) => `"${a.replaceAll('"', '\\"')}"`).join(" ");
+  return execSync(`bash "${script}" ${quoted}`, {
+    encoding: "utf-8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+}
+
+function writeVaultAgentsMd(vaultPath: string): void {
+  const templatePath = join(pluginRoot, "_seed", "AGENTS.md");
+  if (!existsSync(templatePath)) return;
+  const content = readFileSync(templatePath, "utf-8")
+    .replaceAll("{{PLUGIN_ROOT}}", pluginRoot)
+    .replaceAll("{{VAULT_PATH}}", vaultPath);
+  const target = join(vaultPath, "AGENTS.md");
+  if (existsSync(target)) return; // never overwrite a hand-edited vault AGENTS.md
+  writeFileSync(target, content);
+}
+
+function appendWikiPointer(cwd: string, vaultPath: string): void {
+  const block =
+    `\n## Wiki Knowledge Base\n` +
+    `Path: ${vaultPath}\n` +
+    `When needed: (1) read wiki/hot.md first, (2) read wiki/index.md, (3) drill into domain pages.\n` +
+    `Do NOT read for general coding questions.\n`;
+  appendFileSync(join(cwd, "AGENTS.md"), block);
+}
+
 export default function (pi: ExtensionAPI) {
   // ── AC5/AC6/AC7/AC12: tool_call (rewrite + block) ──────────────────────────
   pi.on("tool_call", (event: ToolCallEvent, ctx: ExtensionContext): ToolCallEventResult | void => {
@@ -2194,7 +2249,7 @@ export default function (pi: ExtensionAPI) {
   // Deterministic cross-project promotion (§9.6): entries present in
   // >= promotionThreshold project cores move into wiki/global-core.md with a
   // provenance marker. On-demand counterpart of the session_shutdown trigger.
-  pi.registerCommand("memo-wiki promote-global", {
+  pi.registerCommand("memo:promote-global", {
     description:
       "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
     handler: async (_args, ctx) => {
@@ -2232,7 +2287,7 @@ export default function (pi: ExtensionAPI) {
   // Merge near-duplicate bullets in the project core whose raw text has
   // Jaccard bigram similarity >= similarityThreshold. On-demand compact,
   // replay-safe: a second run with the same config is a no-op.
-  pi.registerCommand("memo-wiki compact-core", {
+  pi.registerCommand("memo:compact-core", {
     description: "Merge near-duplicate entries in the project core (Jaccard bigram similarity)",
     handler: async (_args, ctx) => {
       const vaultPath = getVaultPath(ctx.cwd);
@@ -2262,6 +2317,115 @@ export default function (pi: ExtensionAPI) {
           result === null ? "error" : "info",
         );
       }
+    },
+  });
+
+  // ── /memo:init — vault initialization command ──────────────────────────────
+  // Single-token slash-dispatchable counterpart of the init flow that used to
+  // live in the /memo-wiki skill. Bootstraps the vault (wiki-init.sh), git-inits
+  // it, writes the vault AGENTS.md (pi reads it when CWD is the vault), and
+  // offers optional extras: the weekly lint cron and a Wiki Knowledge Base
+  // pointer in the CWD project's AGENTS.md.
+  pi.registerCommand("memo:init", {
+    description:
+      "Initialize an Obsidian vault for agents-memo: bootstrap, git init, vault AGENTS.md, optional lint cron + project pointer",
+    handler: async (_args, ctx) => {
+      const ui = ctx.hasUI ? ctx.ui : null;
+      let vaultPath = getVaultPath(ctx.cwd);
+      if (!vaultPath) {
+        const input = ui
+          ? await ui.input(
+              "agents-memo: no vault configured. Enter the vault path (absolute):",
+              "~/path/to/vault",
+            )
+          : undefined;
+        if (!input) {
+          ui?.notify("agents-memo: init cancelled (no vault path provided)", "info");
+          return;
+        }
+        vaultPath = input.startsWith("~/") ? join(homedir(), input.slice(2)) : input;
+        if (!existsSync(vaultPath)) {
+          ui?.notify(`agents-memo: vault path does not exist: ${vaultPath}`, "error");
+          return;
+        }
+        if (persistVaultPath(vaultPath)) {
+          // Invalidate the per-cwd cache so later getVaultPath() calls re-resolve
+          // against the freshly written settings file.
+          vaultPathCached = null;
+          vaultPathCachedFor = undefined;
+          ui?.notify(
+            `agents-memo: vault path saved to ~/.pi/agent/settings.json (${vaultPath})`,
+            "info",
+          );
+        } else {
+          ui?.notify(
+            "agents-memo: could not persist vaultPath — configure agentsMemo.vaultPath in ~/.pi/agent/settings.json manually",
+            "warning",
+          );
+        }
+      }
+      if (ui) {
+        const ok = await ui.confirm("agents-memo: init", `Initialize vault at ${vaultPath}?`);
+        if (!ok) {
+          ui.notify("agents-memo: init cancelled", "info");
+          return;
+        }
+      }
+      // 1. Bootstrap: setup-vault + copy-templates + seed-demo (idempotent)
+      ui?.setWorkingMessage("agents-memo: bootstrapping vault…");
+      let bootstrapOut: string;
+      try {
+        bootstrapOut = runScript(join(pluginRoot, "bin", "wiki-init.sh"), [vaultPath]);
+      } catch (err) {
+        ui?.setWorkingMessage();
+        ui?.notify(
+          `agents-memo: bootstrap failed — ${err instanceof Error ? err.message : "unknown error"}`,
+          "error",
+        );
+        return;
+      }
+      // 2. git init (best-effort — a vault without git still works)
+      if (!existsSync(join(vaultPath, ".git"))) {
+        try {
+          execSync("git init", { cwd: vaultPath, encoding: "utf-8" });
+        } catch {
+          // best-effort
+        }
+      }
+      // 3. Vault AGENTS.md (self-contained conventions; pi discovers it from the vault)
+      writeVaultAgentsMd(vaultPath);
+      // 4. Optional: weekly lint cron
+      if (ui) {
+        const installCron = await ui.confirm(
+          "agents-memo: init",
+          "Install the weekly lint cron (Sun 03:00, bin/install-lint-cron.sh)?",
+        );
+        if (installCron) {
+          try {
+            runScript(join(pluginRoot, "bin", "install-lint-cron.sh"), []);
+          } catch (err) {
+            ui.notify(
+              `agents-memo: cron install failed — ${err instanceof Error ? err.message : "unknown error"}`,
+              "error",
+            );
+          }
+        }
+      }
+      // 5. Optional: point the CWD project at the vault (consumer project != vault)
+      const cwd = ctx.cwd;
+      if (ui && cwd) {
+        const cwdAbs = resolve(cwd);
+        if (cwdAbs !== vaultPath && !cwdAbs.startsWith(`${vaultPath}/`)) {
+          const pointer = await ui.confirm(
+            "agents-memo: init",
+            `Point this project (${basename(cwd)}) at the vault? Adds a Wiki Knowledge Base block to ${cwdAbs}/AGENTS.md.`,
+          );
+          if (pointer) appendWikiPointer(cwd, vaultPath);
+        }
+      }
+      ui?.setWorkingMessage();
+      const tail = bootstrapOut.split("\n").slice(-12).join("\n");
+      ui?.notify(`agents-memo: vault initialized at ${vaultPath}\n${tail}`, "info");
     },
   });
 
