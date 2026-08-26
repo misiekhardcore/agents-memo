@@ -3,7 +3,7 @@
 **Multi-thought (3 independent → agent fan-out):**
 
 ```text
-user> /braindump I keep forgetting to check the lint score before PRs. Also need to revisit the hot cache size — it's been growing. And the daily skill confirmation message looks wrong in dark mode.
+user> /memo-braindump I keep forgetting to check the lint score before PRs. Also need to revisit the hot cache size — it's been growing. And the daily skill confirmation message looks wrong in dark mode.
 assistant>
 Captured 3 notes:
 - notes/2026-04-27-check-lint-score-before-prs.md
@@ -14,7 +14,7 @@ Captured 3 notes:
 **Single thought (inline):**
 
 ```text
-user> /braindump The slug truncation rule needs to account for multi-byte unicode characters — right now it can split in the middle of a grapheme cluster, which breaks vault filenames on some filesystems.
+user> /memo-braindump The slug truncation rule needs to account for multi-byte unicode characters — right now it can split in the middle of a grapheme cluster, which breaks vault filenames on some filesystems.
 assistant>
 Captured 1 note:
 - notes/2026-04-27-slug-truncation-multibyte-unicode.md
@@ -23,7 +23,7 @@ Captured 1 note:
 **File input (vault-relative):**
 
 ```text
-user> /braindump retro-notes/2026-04-feature-retro.txt
+user> /memo-braindump retro-notes/2026-04-feature-retro.txt
 assistant>
 Captured N notes:
 - notes/2026-04-27-…

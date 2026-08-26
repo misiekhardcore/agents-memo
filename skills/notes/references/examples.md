@@ -3,14 +3,14 @@
 **Capture (NEW):**
 
 ```text
-user> /note inbox count missing from /wiki status
+user> /memo-note inbox count missing from /memo-wiki status
 assistant> Captured to notes/2026-04-25-inbox-count-missing-from-wiki-status.md
 ```
 
 **Capture (NEW, filler stripped from title):**
 
 ```text
-user> /note we need to check why agents-flow is not using 'wt' for worktrees but the git cli directly
+user> /memo-note we need to check why agents-flow is not using 'wt' for worktrees but the git cli directly
 # title summarised to "agents-flow uses git CLI instead of wt for worktrees"
 # slug exceeds 40 chars; truncated at last `-` before char 40
 assistant> Captured to notes/2026-04-26-agents-flow-uses-git-cli-instead.md
@@ -26,7 +26,7 @@ assistant> Appended to notes/2026-04-22-flaky-macos-runner.md
 **Capture (MATCH-append with title rewrite):**
 
 ```text
-user> /dump same issue now reproduces on Linux too
+user> /memo-dump same issue now reproduces on Linux too
 # existing note title was "flaky macOS runner"; new content broadens scope
 assistant> Appended to notes/2026-04-22-flaky-macos-runner.md
 # title rewritten to "flaky CI runner (macOS + Linux)", filename unchanged
@@ -35,12 +35,12 @@ assistant> Appended to notes/2026-04-22-flaky-macos-runner.md
 **List, filtered:**
 
 ```text
-user> /note list --project=agents-memo
+user> /memo-note list --project=agents-memo
 assistant>
 Pending notes (2):
 
-- [ ] 2026-04-25 [agents-memo] /note process should reuse confidence threshold
-- [ ] 2026-04-24 [agents-memo] inbox count missing from /wiki status
+- [ ] 2026-04-25 [agents-memo] /memo-note process should reuse confidence threshold
+- [ ] 2026-04-24 [agents-memo] inbox count missing from /memo-wiki status
 
 Deferred (1):
 
@@ -50,34 +50,34 @@ Deferred (1):
 **Process:**
 
 ```text
-user> /note process
+user> /memo-note process
 assistant>
 [1/3] 2026-04-25 [agents-memo]
-title: /note process should reuse confidence threshold from save
+title: /memo-note process should reuse confidence threshold from save
 body:
-> /note process should reuse confidence threshold from save
+> /memo-note process should reuse confidence threshold from save
 
 Action? [s]ave / [d]efer / [x]delete / [q]uit
 user> s
-# /save invoked, wiki page created, note removed from notes/
+# /memo-save invoked, wiki page created, note removed from notes/
 assistant> Saved as [[Confidence threshold reuse]] in wiki/concepts/. Note deleted.
 ```
 
 **URL redirect (yes):**
 
 ```text
-user> /note https://example.com/article
-assistant> Detected URL: https://example.com/article. Ingest via /ingest? [y/n]
+user> /memo-note https://example.com/article
+assistant> Detected URL: https://example.com/article. Ingest via /memo-ingest? [y/n]
 user> y
-# /ingest invoked, wiki page created, URL processed
-assistant> Ingested via /ingest: [[Article Title]]
+# /memo-ingest invoked, wiki page created, URL processed
+assistant> Ingested via /memo-ingest: [[Article Title]]
 ```
 
 **URL redirect (no):**
 
 ```text
-user> /note https://example.com/article
-assistant> Detected URL: https://example.com/article. Ingest via /ingest? [y/n]
+user> /memo-note https://example.com/article
+assistant> Detected URL: https://example.com/article. Ingest via /memo-ingest? [y/n]
 user> n
 # standard CAPTURE proceeds, URL captured as text
 assistant> Captured to notes/2026-04-27-example-article-url.md

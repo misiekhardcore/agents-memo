@@ -1,5 +1,5 @@
 ---
-name: query
+name: memo-query
 description: Answer questions from wiki vault. Reads strategically, synthesizes with citations, files answers back.
 when_to_use: Use when the user asks a question, or to retrieve information from the wiki.
 model: opus

@@ -1,7 +1,7 @@
 ---
-name: autoresearch
+name: memo-autoresearch
 description: Autonomous research loop. Searches the web, synthesizes findings, and files structured wiki pages.
-when_to_use: Does NOT answer questions from existing wiki — use /query for that. Starts fresh web research on a topic.
+when_to_use: Does NOT answer questions from existing wiki — use /memo-query for that. Starts fresh web research on a topic.
 model: opus
 effort: high
 user-invocable: true

@@ -1,5 +1,5 @@
 ---
-name: lint
+name: memo-lint
 description: Wiki health check. Orphans, dead links, frontmatter gaps. Generates canvas maps and Bases dashboards.
 when_to_use: Run after every 10-15 ingests or weekly. Routes to agents/memory-lint.md for actual checks.
 model: opus

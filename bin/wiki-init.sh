@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Umbrella script for `/wiki init`. Seeds an Obsidian vault from the path
+# Umbrella script for `/memo-wiki init`. Seeds an Obsidian vault from the path
 # passed in $1 by delegating to setup-vault.sh + copy-templates.sh, then
 # prints next steps. Re-running is idempotent.
 #
 # Usage: bin/wiki-init.sh /absolute/path/to/vault
 #
 # If $1 is empty, prints the configured "vault not set" message and exits 0
-# (no error) so `/wiki init` can guide the user to set vault_path without
+# (no error) so `/memo-wiki init` can guide the user to set vault_path without
 # aborting the session.
 
 set -euo pipefail
@@ -39,5 +39,5 @@ Next steps:
   4. Enable community plugins when prompted, then install:
        - Templater
        - Tray  (keeps Obsidian alive when the window is closed)
-  5. Run /wiki in Claude Code to scaffold your knowledge base.
+  5. Run /memo-wiki in pi to scaffold your knowledge base.
 EOF

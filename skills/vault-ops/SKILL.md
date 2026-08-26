@@ -1,5 +1,5 @@
 ---
-name: vault-ops
+name: memo-vault-ops
 description: Vault operations protocol — CLI verbs, slugging, indexing, active enforcement, bypass list. Reference for skill I/O.
 user-invocable: false
 ---

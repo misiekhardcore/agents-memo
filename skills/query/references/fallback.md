@@ -7,7 +7,7 @@ If the question cannot be answered from the wiki:
 1. Say clearly: "I don't have enough in the wiki to answer this well."
 2. Identify the specific gap: "I have nothing on [subtopic]."
 3. Suggest: "Want to find a source on this? I can help you search or process one."
-4. Do not fabricate; if the wiki lacks the answer, say so and offer to run `/autoresearch`.
+4. Do not fabricate; if the wiki lacks the answer, say so and offer to run `/memo-autoresearch`.
 
 ## Index Format Reference
 

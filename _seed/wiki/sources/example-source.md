@@ -44,4 +44,4 @@ A source page is the ingest record for a single document. It holds the document'
 
 ## Notes
 
-Replace this page with a real source by running `/wiki ingest` on a document.
+Replace this page with a real source by running `/memo-wiki ingest` on a document.

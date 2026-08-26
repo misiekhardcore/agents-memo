@@ -20,7 +20,7 @@ related:
 
 ## Last Updated
 
-{{today}}. Vault initialized with starter pages via `/wiki init`.
+{{today}}. Vault initialized with starter pages via `/memo-wiki init`.
 
 ## Key Recent Facts
 
@@ -42,7 +42,7 @@ The **index** ([[index]]) is the master catalog; the **log** ([[log]]) is the ch
 ## Active Threads
 
 - Vault is freshly initialized; no research threads yet
-- Next step: run `/wiki ingest <path-or-url>` to add your first real source
+- Next step: run `/memo-wiki ingest <path-or-url>` to add your first real source
 - Example pages are placeholders — delete them once you've ingested real content
 
 ## Schema Quick Reference

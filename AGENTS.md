@@ -1,6 +1,6 @@
 # agents-memo
 
-Agent + user instructions for the agents-memo package (pi extension + Claude Code plugin).
+Agent + user instructions for the agents-memo package (pi extension).
 
 ## Vault Assumptions
 
@@ -12,8 +12,8 @@ This vault is designed for **agent-only** use with **single-user, single-machine
 
 ## Plugin Setup
 
-1. Set `vaultPath` in pi settings (`~/.pi/agent/settings.json`) or `vault_path` in Claude Code settings — or the runtime auto-discovers a `wiki/` folder in CWD.
-2. Run `/wiki init` to bootstrap vault structure.
+1. Set `vaultPath` in pi settings (`~/.pi/agent/settings.json`) — or the runtime auto-discovers a `wiki/` folder in CWD.
+2. Run `/memo-wiki init` to bootstrap vault structure.
 
 ## Vault Structure
 
@@ -51,26 +51,26 @@ obsidian prepend file=wiki/index.md content="..."
 
 ## Skills Discovery
 
-All skills live in `skills/<name>/SKILL.md` and are auto-discovered by Claude Code via the plugin manifest.
+All skills live in `skills/<name>/SKILL.md` and are auto-discovered by the harness (pi via the package's `pi.skills` entry; other harnesses via the Agent Skills standard).
 
 ## Available Skills
 
 |Skill|Trigger phrases|
 |-|-|
-|`wiki`|`/wiki`, set up wiki, scaffold vault, check setup|
-|`ingest`|ingest, ingest this url, ingest this image, batch ingest|
-|`query`|query, what do you know about, query quick:, query deep:|
-|`lint`|lint the wiki, health check, find orphans, dead links|
-|`save`|`/save`, file this conversation, save insight|
-|`notes`|`/note`, `/dump`, note this, todo:, show my inbox, `/note process`|
-|`daily`|`/daily`, daily note this, log to today, log this, add to today's log|
-|`daily-close`|`/daily-close`, close today, wrap up today, synthesize today|
-|`braindump`|`/braindump`, brain dump this, dump the following thoughts, dump these thoughts, braindump:, split this into notes|
-|`autoresearch`|autoresearch, autonomous research loop|
-|`canvas`|`/canvas`, add to canvas, create canvas|
-|`defuddle`|clean this url, defuddle, strip clutter|
-|`obsidian-markdown`|obsidian syntax, wikilink, callout, embed|
-|`obsidian-bases`|obsidian bases, .base file, dynamic table|
+|`memo-wiki`|`/memo-wiki`, set up wiki, scaffold vault, check setup|
+|`memo-ingest`|ingest, ingest this url, ingest this image, batch ingest|
+|`memo-query`|query, what do you know about, query quick:, query deep:|
+|`memo-lint`|lint the wiki, health check, find orphans, dead links|
+|`memo-save`|`/memo-save`, file this conversation, save insight|
+|`memo-notes`|`/memo-note`, `/memo-dump`, note this, todo:, show my inbox, `/memo-note process`|
+|`memo-daily`|`/memo-daily`, daily note this, log to today, log this, add to today's log|
+|`memo-daily-close`|`/memo-daily-close`, close today, wrap up today, synthesize today|
+|`memo-braindump`|`/memo-braindump`, brain dump this, dump the following thoughts, dump these thoughts, braindump:, split this into notes|
+|`memo-autoresearch`|autoresearch, autonomous research loop|
+|`memo-canvas`|`/memo-canvas`, add to canvas, create canvas|
+|`memo-defuddle`|clean this url, defuddle, strip clutter|
+|`memo-obsidian-markdown`|obsidian syntax, wikilink, callout, embed|
+|`memo-obsidian-bases`|obsidian bases, .base file, dynamic table|
 
 ## Bootstrap
 
@@ -79,23 +79,23 @@ All skills live in `skills/<name>/SKILL.md` and are auto-discovered by Claude Co
    - `always`: injected at SessionStart; absorb silently.
    - `on-demand`: skills read when active (saves ~2–3k tokens for non-wiki sessions).
    - `never`: user preference, avoid loading unless explicitly requested.
-3. On `/wiki` or "set up wiki": follow wiki skill scaffold workflow.
+3. On `/memo-wiki` or "set up wiki": follow the `memo-wiki` skill scaffold workflow.
 
 ## Orchestration via Sub-Agents
 
 Skills dispatch sub-agents to parallelize heavy lifting and avoid context bloat:
 
-- **`ingest`** → `agents/memory-ingest.md` (one per source; writes wiki pages/index)
-- **`braindump`** → `agents/memory-capture.md` (parallel when independent; sequential when order matters)
-- **`lint`** → `agents/memory-lint.md` (runs all 16 checks; drafts report)
-- **`autoresearch`** → `agents/memory-research-round.md` + `agents/memory-source-synth.md` (search/fetch/synthesis)
-- **`query`** → `agents/memory-gather.md` (parallel page reads when list > 5 pages)
+- **`memo-ingest`** → `agents/memory-ingest.md` (one per source; writes wiki pages/index)
+- **`memo-braindump`** → `agents/memory-capture.md` (parallel when independent; sequential when order matters)
+- **`memo-lint`** → `agents/memory-lint.md` (runs all 16 checks; drafts report)
+- **`memo-autoresearch`** → `agents/memory-research-round.md` + `agents/memory-source-synth.md` (search/fetch/synthesis)
+- **`memo-query`** → `agents/memory-gather.md` (parallel page reads when list > 5 pages)
 
 Orchestrators verify CWD before spawning: `cd "${VAULT_ROOT}" && pwd`. Agents write wiki state; orchestrators coalesce results and update cross-cutting state (index, log). **Parallel agents never update `wiki/hot.md`** — only the orchestrator does (see `${MEMO_PLUGIN_PWD}/skills/hot-cache-protocol/SKILL.md`).
 
 ## Ingest Rules
 
-Single-source ingests require interactive discussion (what to emphasize, granularity, existing context to link). Escape: "just ingest it" or "auto-ingest". Exempt: `/autoresearch` (intentionally autonomous).
+Single-source ingests require interactive discussion (what to emphasize, granularity, existing context to link). Escape: "just ingest it" or "auto-ingest". Exempt: `/memo-autoresearch` (intentionally autonomous).
 
 ## CLI Setup
 Vault I/O via **Obsidian CLI** (shipped with 1.12.7+). See `_shared/setup.md` for installation and registration.
@@ -122,12 +122,12 @@ This directory (`agents/`) contains sub-agent definition files dispatched by orc
 
 |File|Dispatched by|Purpose|
 |-|-|-|
-|`memory-capture.md`|`braindump` skill|Files one atomic chunk as an inbox note|
-|`memory-gather.md`|`query` / `daily-close`|Reads files and returns structured summaries|
-|`memory-ingest.md`|`ingest` skill|Processes one source into wiki pages|
-|`memory-lint.md`|`lint` skill|Runs full wiki health check; produces report|
+|`memory-capture.md`|`memo-braindump` skill|Files one atomic chunk as an inbox note|
+|`memory-gather.md`|`memo-query` / `memo-daily-close`|Reads files and returns structured summaries|
+|`memory-ingest.md`|`memo-ingest` skill|Processes one source into wiki pages|
+|`memory-lint.md`|`memo-lint` skill|Runs full wiki health check; produces report|
 |`memory-search.md`|orchestrators / `Task`|Answers questions from vault content (read-only)|
-|`memory-research-round.md`|`autoresearch`|Searches, fetches, dispatches source-synth agents|
+|`memory-research-round.md`|`memo-autoresearch`|Searches, fetches, dispatches source-synth agents|
 |`memory-source-synth.md`|`research-round`|Synthesizes one source into wiki pages|
 
 ## Conventions

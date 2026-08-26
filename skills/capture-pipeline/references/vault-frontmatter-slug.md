@@ -11,7 +11,7 @@ Resolution order:
 
 ```bash
 VAULT=$(bash "${MEMO_PLUGIN_PWD}/scripts/resolve-vault.sh") || {
-  echo "No vault configured — run /wiki init first."
+  echo "No vault configured — run /memo-wiki init first."
   exit 1
 }
 ```

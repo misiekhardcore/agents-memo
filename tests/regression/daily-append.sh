@@ -12,11 +12,11 @@
 # Verb-level coverage (file-exists append, file-missing create+append,
 # frontmatter-set replace/insert/malformed) lives in tests/cli-smoke.sh.
 #
-# Scope vs E2E: the full E2E harness (make e2e) drives /daily through claude -p
-# and validates the model + skill + hook + CLI stack end-to-end. This script
-# only verifies the CLI verb itself does not lose bullets — that is sufficient
-# for AC1 because the new daily skill flow has no read-modify-write path the
-# model can corrupt.
+# Scope vs E2E: the former Claude Code e2e local tier (removed — the package is
+# now a pi extension) drove /daily through claude -p and validated the model +
+# skill + hook + CLI stack end-to-end. This script only verifies the CLI verb
+# itself does not lose bullets — that is sufficient for AC1 because the daily
+# skill flow has no read-modify-write path the model can corrupt.
 #
 # Usage:
 #   bash tests/regression/daily-append.sh

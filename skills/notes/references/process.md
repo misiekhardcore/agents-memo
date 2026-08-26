@@ -1,8 +1,8 @@
 # PROCESS Operation (Update / Delete / Triage)
 
-Walk pending notes one-at-a-time. Route to `/save`, defer, or delete.
+Walk pending notes one-at-a-time. Route to `/memo-save`, defer, or delete.
 
-`/save` is primary off-ramp. Defer for future-actionable notes. Delete for noise.
+`/memo-save` is primary off-ramp. Defer for future-actionable notes. Delete for noise.
 
 ## Pipeline
 
@@ -19,9 +19,9 @@ Walk pending notes one-at-a-time. Route to `/save`, defer, or delete.
    ```
 
 3. Wait for single-letter action. Loop on invalid input.
-4. **`s` (save)** — invoke `save` skill via Skill tool with note body, frontmatter, explicit name so name-prompt is pre-satisfied. On success:
+4. **`s` (save)** — invoke `memo-save` skill via Skill tool with note body, frontmatter, explicit name so name-prompt is pre-satisfied. On success:
    - Delete `<vault_root>/notes/<filename>`.
-   - Remove the corresponding row from `notes/index.md`. On `/save` failure, leave the note untouched and surface the error.
+   - Remove the corresponding row from `notes/index.md`. On `/memo-save` failure, leave the note untouched and surface the error.
 5. **`d` (defer)** — patch frontmatter: `status: deferred`, bump `updated:` to today. Move row in `notes/index.md` from `## Pending` to `## Deferred`.
 6. **`x` (delete)** — delete the file unconditionally. Remove corresponding row from `notes/index.md`.
 7. **`q` (quit)** — exit. Remaining notes stay pending.

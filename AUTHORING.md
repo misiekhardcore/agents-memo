@@ -80,7 +80,7 @@ The pi extension transparently rewrites raw `obsidian <verb> ...` calls. For err
 
 |Field|Notes|
 |-|-|
-|`name`|Required. Must match the directory name for skills.|
+|`name`|Required. Must match the directory name for skills, except skills in the agents-memo package where the frontmatter name carries the `memo-` namespace prefix (e.g. directory `wiki/` declares `name: memo-wiki`).|
 |`description`|**≤150 chars.** Shown in `/` menu and used for harness routing.|
 |`when_to_use`|Optional routing hint alongside `description`. Combined ≤1,536 chars. Include only when mis-routing is plausible: exclusions ("Does NOT X — use /Y"), preconditions, or disambiguation. Omit when `description` is unambiguous.|
 |`allowed-tools`|Space-separated allowlist active while skill is running. Skills that dispatch sub-agents **must include `Agent`**. Vault ops go through `obsidian` CLI (Bash) — do not list `Read`, `Write`, `Glob`, or `Grep` unless the skill calls those tools directly outside the vault.|
@@ -104,7 +104,7 @@ Skills in this repo operate on **vault contents only**: `wiki/`, `notes/`, `dail
 |Direction|Action|
 |-|-|
 |**Do**|Run `/prune` in `agents-flow` — the Authoring Lane audits skill files.|
-|**Don't**|Open a `wiki-lint` issue in `agents-memo` — vault skills do not inspect skill source files.|
+|**Don't**|Open a `memo-lint` issue in `agents-memo` — vault skills do not inspect skill source files.|
 
 ## Agent Frontmatter
 
@@ -126,7 +126,7 @@ Agents use **`tools`** (allowlist), not `allowed-tools` — using the wrong key 
 
 **Orchestrator:** verify CWD (`cd "${VAULT_ROOT}" && pwd`), collect reports, update index/log/hot.md once (never per-agent), never write vault state in parallel.
 
-See agents/ for patterns: `capture` (single note), `ingest` (single source), `lint` (vault scan), `gather` (page cluster).
+See agents/ for patterns: `memory-capture` (single note), `memory-ingest` (single source), `memory-lint` (vault scan), `memory-gather` (page cluster).
 
 ## Writing Style
 

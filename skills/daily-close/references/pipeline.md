@@ -52,7 +52,7 @@ Output only the prose and optional section headers/bullets. Do not include input
 
 |Condition|Message|
 |-|-|
-|No vault configured|`No vault configured — run /wiki init first.`|
+|No vault configured|`No vault configured — run /memo-wiki init first.`|
 |Invalid date|`Invalid date: <input>. Expected YYYY-MM-DD.`|
 |Future date|`Cannot close a future date: YYYY-MM-DD.`|
 |Daily file missing|`No daily file for YYYY-MM-DD.`|
@@ -63,42 +63,42 @@ Output only the prose and optional section headers/bullets. Do not include input
 
 **Close today (no argument):**
 ```text
-user> /daily-close
+user> /memo-daily-close
 assistant> Closed daily/2026-04-27.md (3 follow-ups)
 ```
 
 **Close past date:**
 ```text
-user> /daily-close 2026-04-20
+user> /memo-daily-close 2026-04-20
 assistant> Closed daily/2026-04-20.md
 ```
 
 **Re-run (replaces prior summary):**
 ```text
-user> /daily-close
+user> /memo-daily-close
 assistant> Closed daily/2026-04-27.md (1 follow-up)
 ```
 
 **Empty day:**
 ```text
-user> /daily-close 2026-04-15
+user> /memo-daily-close 2026-04-15
 assistant> Nothing to synthesize for 2026-04-15.
 ```
 
 **File does not exist:**
 ```text
-user> /daily-close 2026-03-01
+user> /memo-daily-close 2026-03-01
 assistant> No daily file for 2026-03-01.
 ```
 
 **Future date:**
 ```text
-user> /daily-close 2026-05-01
+user> /memo-daily-close 2026-05-01
 assistant> Cannot close a future date: 2026-05-01.
 ```
 
 **Invalid date:**
 ```text
-user> /daily-close next Monday
+user> /memo-daily-close next Monday
 assistant> Invalid date: next Monday. Expected YYYY-MM-DD.
 ```

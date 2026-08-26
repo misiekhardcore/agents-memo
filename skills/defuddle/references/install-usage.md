@@ -53,6 +53,6 @@ Skip: clean markdown/PDF, dashboards/apps/structured data, defuddle not installe
 
 If not installed: use WebFetch directly. Content is less clean but workable.
 
-## Integration with /ingest
+## Integration with /memo-ingest
 
-`/ingest` calls defuddle automatically if available when given a URL. Manual path: run save command above, then `ingest .raw/articles/[slug].md`.
+`/memo-ingest` calls defuddle automatically if available when given a URL. Manual path: run save command above, then `/memo-ingest .raw/articles/[slug].md`.

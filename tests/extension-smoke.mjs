@@ -1307,7 +1307,7 @@ section("PM2-digest — buildDigest (top-N, budget, candidates)");
   assert(digest.includes("- Keep edits small"), "digest includes top project learning");
   assert(digest.includes("- Prefer small diffs"), "digest includes top global learning");
   assert(!digest.includes("Avoid: guess"), "watch-outs never appear in the digest");
-  assert(digest.includes("Full memory on demand: /query or obsidian search."), "pointer line present");
+  assert(digest.includes("Full memory on demand: /memo-query or obsidian search."), "pointer line present");
 
   // Top-N caps apply by score (stable): smaller tops drop the lowest bullets.
   const smallCfg = { ...cfg, memoryInjection: { ...cfg.memoryInjection, projectCoreTop: 2, globalCoreTop: 1 } };
@@ -1333,7 +1333,7 @@ section("PM2-digest — buildDigest (top-N, budget, candidates)");
   const noBullets = buildDigest(VAULT, REPO_SLUG, { ...cfg, memoryInjection: { ...cfg.memoryInjection, digestBudgetChars: 1 } });
   assert(!!noBullets && !noBullets.includes("- Keep edits small"), "budget below headers → all bullets dropped");
   assert(noBullets.includes("[agents-memo memory]"), "header kept even when over budget");
-  assert(noBullets.includes("Full memory on demand: /query or obsidian search."), "pointer line kept even when over budget");
+  assert(noBullets.includes("Full memory on demand: /memo-query or obsidian search."), "pointer line kept even when over budget");
 
   // Empty/missing cores → null (no injection at all).
   projectFiles.delete("wiki/global-core.md");
@@ -1505,14 +1505,14 @@ section("PM2-sweep — cross-project promotion");
     assert(sweepPromoteGlobal(VAULT, 2).promoted === 0, "project read failure → that project skipped");
     failReads.delete("wiki/projects/sweep-b/core.md");
 
-    // /wiki promote-global command: registered with a description and wired
+    // /memo-wiki promote-global command: registered with a description and wired
     // to the same sweep. The AC17-invalidation section leaves the module's
     // cached vault pointing at a scratch cwd; firing session_shutdown (which
     // clears the cache after re-resolving) makes the handler re-resolve to
     // the restored VAULT settings on its next getVaultPath().
     mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx));
-    const cmd = mock.commands.find((c) => c.name === "wiki promote-global");
-    assert(!!cmd && !!cmd?.opts?.description, "/wiki promote-global registered with description");
+    const cmd = mock.commands.find((c) => c.name === "memo-wiki promote-global");
+    assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki promote-global registered with description");
     projectFiles.delete("wiki/global-core.md");
     await cmd.opts.handler("", mock.ctx);
     const afterCmd = projectFiles.get("wiki/global-core.md") ?? "";
@@ -1669,8 +1669,8 @@ section("core-compact — compactCoreFile round-trip");
 
 section("core-compact — command registration + config defaults");
 {
-  const cmd = mock.commands.find((c) => c.name === "wiki compact-core");
-  assert(!!cmd && !!cmd?.opts?.description, "/wiki compact-core registered with description");
+  const cmd = mock.commands.find((c) => c.name === "memo-wiki compact-core");
+  assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki compact-core registered with description");
   assert(cmd.opts.description.includes("near-duplicate"), "description mentions near-duplicate merging");
 
   const cfg = memoMod.readPiSettings();

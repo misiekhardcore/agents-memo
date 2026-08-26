@@ -1,5 +1,5 @@
 ---
-name: obsidian-bases
+name: memo-obsidian-bases
 description: Obsidian Bases (.base files) — dynamic tables, cards, lists, filters, formulas.
 when_to_use: Creating or editing `.base` files for wiki dashboards.
 model: haiku

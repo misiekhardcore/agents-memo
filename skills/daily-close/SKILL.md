@@ -1,5 +1,5 @@
 ---
-name: daily-close
+name: memo-daily-close
 description: Synthesize a day's captures into a prose summary. Idempotent; re-run replaces prior summary.
 when_to_use: '"close today", "wrap up today", "synthesize today". Run at end of day.'
 model: sonnet

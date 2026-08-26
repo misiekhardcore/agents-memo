@@ -28,7 +28,7 @@ A concept page captures a pattern, technique, or idea — not a specific person,
 
 ## How It Works
 
-Concept pages are populated by the `/wiki ingest` and `/wiki autoresearch` skills. When a source is ingested, the LLM extracts patterns and creates or updates concept pages.
+Concept pages are populated by the `/memo-wiki ingest` and `/memo-wiki autoresearch` skills. When a source is ingested, the LLM extracts patterns and creates or updates concept pages.
 
 ## Why It Matters
 

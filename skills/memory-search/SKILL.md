@@ -1,12 +1,12 @@
 ---
-name: memory-search
+name: memo-memory-search
 description: Look up project knowledge from the wiki memory — decisions, bugs, concepts, prior work. Uses obsidian CLI for fast retrieval instead of grep.
 when_to_use: When the user asks about project history, prior decisions, bugs, patterns, or anything documented in the vault. Also when asked "check the vault", "check memory", or "what does the wiki say?"
 allowed-tools: Bash
 ---
 # memory-search
 
-Quick vault lookups using obsidian CLI. For full synthesis with filing-back, use the `query` skill.
+Quick vault lookups using obsidian CLI. For full synthesis with filing-back, use the `memo-query` skill.
 
 ## Vault I/O
 
@@ -38,7 +38,7 @@ All vault reads use `scripts/obsidian-cli.sh` — never grep, never direct file 
 
 5. **Respond with citations.** Always cite sources as `[[wikilink]]`.
 
-6. **If the vault lacks the answer**, say so clearly and offer to run `/query` for deep synthesis.
+6. **If the vault lacks the answer**, say so clearly and offer to run `/memo-query` for deep synthesis.
 
 ## Token Discipline
 

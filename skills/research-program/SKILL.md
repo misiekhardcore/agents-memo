@@ -1,11 +1,11 @@
 ---
-name: research-program
+name: memo-research-program
 description: Research program specification — search objectives, confidence scoring, constraints, style, source trust.
 user-invocable: false
 ---
 # Research Program Specification
 
-Standard configuration for the `autoresearch` loop. Read before every run.
+Standard configuration for the `memo-autoresearch` loop. Read before every run.
 
 ## Search Objectives
 - Find authoritative sources (prefer .edu, peer-reviewed, official docs, primary sources).

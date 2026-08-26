@@ -36,7 +36,7 @@ If a candidate page is a leaf and the answer needs wider topic context, run `obs
 
 ### Synthesis→Trail Discovery
 
-When a candidate page has `type: synthesis` (a `Research: [Topic]` page from `/autoresearch`), discover its trail:
+When a candidate page has `type: synthesis` (a `Research: [Topic]` page from `/memo-autoresearch`), discover its trail:
 
 1. Run `obsidian backlinks path=<synthesis-path> format=json`.
 2. For each entry, run `obsidian properties path=<entry>` to read frontmatter and filter to `type: trail`.
@@ -49,4 +49,4 @@ When a candidate page has `type: synthesis` (a `Research: [Topic]` page from `/a
 
 **Trail vs hub** — both reachable via backlinks, disambiguated by `type: trail` vs `type: domain`. Read the trail when re-entering a research topic; read the hub when exploring a domain.
 
-**Fallback.** If no trail exists for a synthesis page, fall back to standard backlink/hub traversal. No trail is not a gap — `/autoresearch` now emits exactly one trail per run.
+**Fallback.** If no trail exists for a synthesis page, fall back to standard backlink/hub traversal. No trail is not a gap — `/memo-autoresearch` now emits exactly one trail per run.

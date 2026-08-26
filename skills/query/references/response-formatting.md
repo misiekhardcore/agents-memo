@@ -8,7 +8,7 @@ After answering, offer to file: "This analysis seems worth keeping. Should I sav
 
 ## Filing Answers Back
 
-Good answers compound into the wiki. Use `/save` to file the answer as a wiki page when it contains reusable knowledge.
+Good answers compound into the wiki. Use `/memo-save` to file the answer as a wiki page when it contains reusable knowledge.
 
 When filing an answer:
 

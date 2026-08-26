@@ -10,7 +10,7 @@ If image paths present → Read `${MEMO_PLUGIN_PWD}/skills/image-capture/SKILL.m
 
 ## Step 3: Resolve vault
 
-Resolve `<vault_root>` per [§1](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md). Abort with `No vault configured — run /wiki init first.` if unresolved.
+Resolve `<vault_root>` per [§1](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md). Abort with `No vault configured — run /memo-wiki init first.` if unresolved.
 
 ## Step 4: Compute date/time
 
@@ -60,7 +60,7 @@ Per [§7](${MEMO_PLUGIN_PWD}/skills/capture-pipeline/SKILL.md):
 
 **First call (file does not exist):**
 ```text
-user> /daily shipped the /note slug rewrite
+user> /memo-daily shipped the /memo-note slug rewrite
 assistant> Logged to daily/2026-04-27.md
 ```
 
@@ -72,7 +72,7 @@ assistant> Logged to daily/2026-04-27.md
 
 **Two calls in same minute:**
 ```text
-user> /daily standup done
+user> /memo-daily standup done
 assistant> Logged to daily/2026-04-27.md
 user> daily note this: retrospective rescheduled to Thursday
 assistant> Logged to daily/2026-04-27.md
@@ -80,6 +80,6 @@ assistant> Logged to daily/2026-04-27.md
 
 **No vault configured:**
 ```text
-user> /daily fixed the flaky test
-assistant> No vault configured — run /wiki init first.
+user> /memo-daily fixed the flaky test
+assistant> No vault configured — run /memo-wiki init first.
 ```

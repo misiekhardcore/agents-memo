@@ -1,6 +1,6 @@
 # PROMOTE Procedure
 
-`/wiki promote <tag>` → Execute:
+`/memo-wiki promote <tag>` → Execute:
 
 1. Resolve tag slug (kebab-case, strip leading `#`).
 2. Collect all leaves with `tags:` containing the resolved tag across `wiki/concepts/`, `wiki/entities/`, `wiki/sources/`.

@@ -1,5 +1,5 @@
 ---
-name: save
+name: memo-save
 description: Save conversation/insight/note as structured wiki page. Updates index, log, hot cache.
 when_to_use: Non-obvious synthesis, rationale, research findings. Creates permanent wiki pages. All five steps are mandatory.
 model: sonnet
