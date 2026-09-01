@@ -1,7 +1,8 @@
 .PHONY: test e2e-build e2e-clean changelog
 
 # Deterministic test tier — hermetic regression suite (no Obsidian required):
-# extension smoke (node), pi-settings tier, prune-lint guard, hot-cache guard.
+# extension smoke (node), pi-settings tier, prune-lint guard, index-section
+# insert guard, lint-duplicate-headings guard, hot-cache guard.
 # cli-smoke/daily-append/read-canvas skip with exit 0 when Obsidian is not
 # running, so the target is safe in any environment.
 # Requires node_modules (jiti + tsc): run `npm ci` first.
@@ -12,6 +13,8 @@ test:
 	bash tests/regression/hot-cache-guard.sh
 	bash tests/regression/pi-settings-tier.sh
 	bash tests/regression/prune-lint-guard.sh
+	bash tests/regression/index-section-insert.sh
+	bash tests/regression/lint-duplicate-headings.sh
 	node tests/extension-smoke.mjs
 
 e2e-build:

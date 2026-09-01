@@ -1,4 +1,4 @@
-# Lint Checks (1–16)
+# Lint Checks (1–17)
 
 ## Check #1: Orphan Pages
 
@@ -85,6 +85,16 @@ For each trail:
 5. **No minimum link count** — one-step trail is valid; must NOT be flagged.
 
 Auto-fix policy: **never**. Trails are run-snapshots; rewriting destroys run-record. Findings are advisory.
+
+## Check #17: Duplicate Section Headings
+
+Source: `duplicate_headings` array in `lint-data-YYYY-MM-DD.json`. Each entry: `{source_page, heading, count}` — a heading (`##` or deeper, exact line text) occurring more than once in the same page. Frontmatter and fenced code excluded (shared with check #7's scan pass).
+
+Why it exists: duplicated headings in `wiki/index.md` made `/save`'s section splice (`scripts/index-section-insert.sh`) insert entries after every occurrence (issue #195); the script now inserts after the first occurrence only and warns on stderr, but the drift itself needs manual consolidation.
+
+Semantics notes (exact-line keys): `## Sources` vs `## Sources ` (trailing space) and `## X` vs `### X` are DISTINCT keys — near-duplicates are not flagged; review those manually. A bare `####` line (hashes, no trailing space) doesn't match the heading regex (inherited from check #7) — but `#### ` with a trailing space does match, and the full line text is the key, so a `#### ` pair would be flagged. The insert script's `grep -c`/`awk` splice is fence/frontmatter-blind — a `## X` line inside a code fence in an index file would be counted and could receive an inserted entry, while check #17 is fence-aware; reconcile fenced headings manually.
+
+Auto-fix policy: **ask-first** (dedupe is a structural edit; which heading is canonical is a judgment call).
 
 ## Gotchas
 
