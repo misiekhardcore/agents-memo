@@ -13,13 +13,18 @@
 
 Any project can reference this vault. Add this block to other projects'
 `AGENTS.md` (pi loads it when the project is the CWD; `~/.pi/agent/AGENTS.md`
-for global coverage):
+for global coverage). The block is wrapped in `<!-- agents-memo:begin --> …
+<!-- agents-memo:end -->` HTML-comment markers so `/memo:init` can refresh it
+idempotently without touching hand-written content:
 
 ```markdown
+<!-- agents-memo:begin -->
 ## Wiki Knowledge Base
 Path: /path/to/vault
 When needed: (1) read wiki/hot.md, (2) read wiki/index.md, (3) drill into domain pages.
-Do NOT read for general coding questions.
+Use it for architectural quirks and complex concepts; skip it for straightforward
+questions answerable from common knowledge or the code.
+<!-- agents-memo:end -->
 ```
 
 `/memo:init` offers to append this block to the CWD project's `AGENTS.md` when

@@ -11,7 +11,9 @@ This session has an Obsidian vault configured by the `agents-memo` plugin. The v
 
 ## When NOT to engage the vault
 
-General coding, build, or test work in the current repo. Do not read the vault for routine code questions — the wiki is for synthesized knowledge, not for re-deriving things from source.
+Straightforward coding questions — common knowledge or answerable by reading the
+code. Do not re-derive what the code already tells you; the wiki holds
+synthesized knowledge: decisions, architectural quirks, and complex concepts.
 
 ## Vault I/O
 

@@ -1804,17 +1804,50 @@ function writeVaultAgentsMd(vaultPath: string): void {
     .replaceAll("{{PLUGIN_ROOT}}", pluginRoot)
     .replaceAll("{{VAULT_PATH}}", vaultPath);
   const target = join(vaultPath, "AGENTS.md");
-  if (existsSync(target)) return; // never overwrite a hand-edited vault AGENTS.md
+  if (existsSync(target)) {
+    // agents-md marker contract: refresh only the marked zone; leave
+    // hand-written (unmarked) vault AGENTS.md files alone.
+    const existing = readFileSync(target, "utf-8");
+    const begin = "<!-- agents-memo:begin -->";
+    const end = "<!-- agents-memo:end -->";
+    const b = existing.indexOf(begin);
+    const e = existing.indexOf(end);
+    if (b !== -1 && e !== -1 && e > b) {
+      writeFileSync(target, `${existing.slice(0, b)}${content}${existing.slice(e + end.length)}`);
+    }
+    return;
+  }
   writeFileSync(target, content);
 }
 
+// HTML-comment markers delimit the plugin-managed zone in a project's
+// AGENTS.md (same contract as the agents-md ecosystem tooling): re-running
+// replaces only the marked block, hand-written content is preserved, and the
+// zone is invisible in rendered markdown.
+const WIKI_POINTER_BEGIN = "<!-- agents-memo:begin -->";
+const WIKI_POINTER_END = "<!-- agents-memo:end -->";
+
 function appendWikiPointer(cwd: string, vaultPath: string): void {
+  const target = join(cwd, "AGENTS.md");
   const block =
-    `\n## Wiki Knowledge Base\n` +
+    `${WIKI_POINTER_BEGIN}\n` +
+    `## Wiki Knowledge Base\n` +
     `Path: ${vaultPath}\n` +
     `When needed: (1) read wiki/hot.md first, (2) read wiki/index.md, (3) drill into domain pages.\n` +
-    `Do NOT read for general coding questions.\n`;
-  appendFileSync(join(cwd, "AGENTS.md"), block);
+    `Use it for architectural quirks and complex concepts; skip it for straightforward\n` +
+    `questions answerable from common knowledge or the code.\n` +
+    `${WIKI_POINTER_END}\n`;
+  const existing = existsSync(target) ? readFileSync(target, "utf-8") : "";
+  const b = existing.indexOf(WIKI_POINTER_BEGIN);
+  const e = existing.indexOf(WIKI_POINTER_END);
+  if (b !== -1 && e !== -1 && e > b) {
+    writeFileSync(
+      target,
+      `${existing.slice(0, b)}${block}${existing.slice(e + WIKI_POINTER_END.length)}`,
+    );
+    return;
+  }
+  appendFileSync(target, `\n${block}`);
 }
 
 export default function (pi: ExtensionAPI) {
