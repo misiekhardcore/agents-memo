@@ -1,6 +1,6 @@
 {
   "name": "agents-memo",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Obsidian wiki plugin for pi coding agent — personal knowledge vault with LLM-assisted ingestion, research, and retrieval.",
   "type": "module",
