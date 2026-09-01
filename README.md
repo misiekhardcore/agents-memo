@@ -123,8 +123,8 @@ Also registers the `memo_dispatch` tool for delegating work to vault sub-agents 
 ### Commands
 
 - `/memo:init` — initialize a vault: bootstrap (`wiki-init.sh`), `git init`,
-  write the vault `AGENTS.md`, and offer the weekly lint cron
-  (`bin/install-lint-cron.sh`) plus a Wiki Knowledge Base pointer in the CWD
+  write the vault `AGENTS.md`, and offer the weekly lint timer
+  (`bin/install-lint-service.sh`) plus a Wiki Knowledge Base pointer in the CWD
   project's `AGENTS.md`.
 - `/memo:promote-global` — deterministic cross-project promotion sweep into
   `wiki/global-core.md` (on-demand counterpart of the session-shutdown trigger).
@@ -134,17 +134,19 @@ All three are single-token names, so they are slash-dispatchable in the TUI.
 
 ## Scheduled Maintenance
 
-Lint is **opt-in via OS scheduler** (cron, systemd timers, launchd).
-`bin/wiki-lint-cron.sh` runs the memo-lint skill via `pi -p` (headless) with
-auto-fix and commit. Install the weekly entry with:
+Lint is **opt-in via a systemd user timer**. `bin/wiki-lint-cron.sh` runs the
+memo-lint skill via `pi -p` (headless) with auto-fix and commit. Install the
+weekly timer with:
 
 ```bash
-bin/install-lint-cron.sh              # weekly, Sun 03:00
-bin/install-lint-cron.sh --uninstall  # remove it
-bin/install-lint-cron.sh --schedule "0 2 * * 1"  # custom schedule
+bin/install-lint-service.sh              # weekly, Sun 03:00 (Persistent=true)
+bin/install-lint-service.sh --uninstall  # remove it
+bin/install-lint-service.sh --schedule "Mon *-*-* 02:00:00"  # custom OnCalendar
 ```
 
-Requires Obsidian running and the agents-memo package registered in pi.
+Installs `agents-memo-wiki-lint.{service,timer}` user units; logs in journald
+(`journalctl --user -u agents-memo-wiki-lint.service`). Requires Obsidian
+running and the agents-memo package registered in pi.
 
 ## Contributing
 

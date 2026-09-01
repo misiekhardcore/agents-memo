@@ -49,7 +49,7 @@ In pi, type `/memo-wiki` to see all available wiki operations, or run the
 setup commands directly:
 
 ```text
-/memo:init             — (re)initialize this vault: bootstrap, git init, vault AGENTS.md, optional lint cron
+/memo:init             — (re)initialize this vault: bootstrap, git init, vault AGENTS.md, optional lint timer
 /memo-wiki query <question>  — ask a question answered from vault content
 /memo-wiki ingest <path-or-url> — ingest a document and extract wiki pages
 ```
@@ -59,14 +59,16 @@ running inside it knows the wiki conventions without the plugin.
 
 ## 6. Optional: Scheduled Linting
 
-Keep the vault healthy automatically. Install the weekly lint cron
+Keep the vault healthy automatically. Install the weekly lint timer
 (runs the memo-lint skill headless via `pi -p` and commits fixes):
 
 ```bash
-bin/install-lint-cron.sh              # weekly, Sun 03:00
-bin/install-lint-cron.sh --uninstall  # remove it
+bin/install-lint-service.sh              # weekly, Sun 03:00
+bin/install-lint-service.sh --uninstall  # remove it
 ```
 
+Installs the `agents-memo-wiki-lint` systemd user timer
+(`journalctl --user -u agents-memo-wiki-lint.service` for logs).
 Requires Obsidian running at the scheduled time. Run `/memo-lint` interactively
 any time for a manual health check.
 

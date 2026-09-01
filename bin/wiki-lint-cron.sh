@@ -18,8 +18,9 @@
 # Requires the agents-memo package registered in pi (~/.pi/agent/settings.json)
 # and a configured provider, so headless `pi -p` can load the memo-lint skill.
 #
-# Install via bin/install-lint-cron.sh (or crontab manually, weekly Sun 03:00):
-#   0 3 * * 0 /absolute/path/to/agents-memo/bin/wiki-lint-cron.sh
+# Install as a systemd user timer via bin/install-lint-service.sh:
+#   bin/install-lint-service.sh   (weekly Sun 03:00, Persistent=true)
+#   journalctl --user -u agents-memo-wiki-lint.service
 
 set -e
 

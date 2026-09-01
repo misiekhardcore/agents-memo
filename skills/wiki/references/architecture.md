@@ -29,8 +29,8 @@ initializing from inside a consumer project.
 
 Initialization is owned by the **`/memo:init` extension command**, not this skill:
 bootstrap (setup-vault + copy-templates + seed-demo), `git init`, vault
-`AGENTS.md` (template in `_seed/AGENTS.md`), optional lint cron
-(`bin/install-lint-cron.sh`), optional project pointer.
+`AGENTS.md` (template in `_seed/AGENTS.md`), optional lint timer
+(`bin/install-lint-service.sh`), optional project pointer.
 
 ## LLM Responsibilities
 

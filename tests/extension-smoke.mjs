@@ -1671,7 +1671,7 @@ section("init — command registration");
 {
   const cmd = mock.commands.find((c) => c.name === "memo:init");
   assert(!!cmd && !!cmd?.opts?.description, "/memo:init registered with description");
-  assert(cmd.opts.description.includes("lint cron"), "init description mentions the lint cron");
+  assert(cmd.opts.description.includes("lint"), "init description mentions the lint timer");
 }
 
 section("core-compact — command registration + config defaults");

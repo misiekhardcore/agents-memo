@@ -2324,11 +2324,11 @@ export default function (pi: ExtensionAPI) {
   // Single-token slash-dispatchable counterpart of the init flow that used to
   // live in the /memo-wiki skill. Bootstraps the vault (wiki-init.sh), git-inits
   // it, writes the vault AGENTS.md (pi reads it when CWD is the vault), and
-  // offers optional extras: the weekly lint cron and a Wiki Knowledge Base
+  // offers optional extras: the weekly lint timer and a Wiki Knowledge Base
   // pointer in the CWD project's AGENTS.md.
   pi.registerCommand("memo:init", {
     description:
-      "Initialize an Obsidian vault for agents-memo: bootstrap, git init, vault AGENTS.md, optional lint cron + project pointer",
+      "Initialize an Obsidian vault for agents-memo: bootstrap, git init, vault AGENTS.md, optional lint timer + project pointer",
     handler: async (_args, ctx) => {
       const ui = ctx.hasUI ? ctx.ui : null;
       let vaultPath = getVaultPath(ctx.cwd);
@@ -2394,15 +2394,15 @@ export default function (pi: ExtensionAPI) {
       }
       // 3. Vault AGENTS.md (self-contained conventions; pi discovers it from the vault)
       writeVaultAgentsMd(vaultPath);
-      // 4. Optional: weekly lint cron
+      // 4. Optional: weekly lint timer (systemd user timer)
       if (ui) {
         const installCron = await ui.confirm(
           "agents-memo: init",
-          "Install the weekly lint cron (Sun 03:00, bin/install-lint-cron.sh)?",
+          "Install the weekly lint timer (systemd, Sun 03:00, bin/install-lint-service.sh)?",
         );
         if (installCron) {
           try {
-            runScript(join(pluginRoot, "bin", "install-lint-cron.sh"), []);
+            runScript(join(pluginRoot, "bin", "install-lint-service.sh"), []);
           } catch (err) {
             ui.notify(
               `agents-memo: cron install failed — ${err instanceof Error ? err.message : "unknown error"}`,
