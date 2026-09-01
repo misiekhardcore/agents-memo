@@ -39,5 +39,6 @@ Next steps:
   4. Enable community plugins when prompted, then install:
        - Templater
        - Tray  (keeps Obsidian alive when the window is closed)
-  5. Run /memo-wiki in pi to scaffold your knowledge base.
+  5. Run /memo-wiki in pi to route vault operations, or /memo:init to
+     re-run initialization (git init, vault AGENTS.md, optional lint cron).
 EOF

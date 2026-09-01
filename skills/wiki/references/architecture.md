@@ -11,19 +11,32 @@
 
 ## Cross-Project Referencing
 
-Any project can reference this vault. Add this to other projects' `CLAUDE.md`:
+Any project can reference this vault. Add this block to other projects'
+`AGENTS.md` (pi loads it when the project is the CWD; `~/.pi/agent/AGENTS.md`
+for global coverage). The block is wrapped in `<!-- agents-memo:begin --> …
+<!-- agents-memo:end -->` HTML-comment markers so `/memo:init` can refresh it
+idempotently without touching hand-written content:
 
 ```markdown
+<!-- agents-memo:begin -->
 ## Wiki Knowledge Base
 Path: /path/to/vault
 When needed: (1) read wiki/hot.md, (2) read wiki/index.md, (3) drill into domain pages.
-Do NOT read for general coding questions.
+Use it for architectural quirks and complex concepts; skip it for straightforward
+questions answerable from common knowledge or the code.
+<!-- agents-memo:end -->
 ```
+
+`/memo:init` offers to append this block to the CWD project's `AGENTS.md` when
+initializing from inside a consumer project.
+
+## Vault Initialization
+
+Initialization is owned by the **`/memo:init` extension command**, not this skill:
+bootstrap (setup-vault + copy-templates + seed-demo), `git init`, vault
+`AGENTS.md` (template in `_seed/AGENTS.md`), optional lint timer
+(`bin/install-lint-service.sh`), optional project pointer.
 
 ## LLM Responsibilities
 
-1. Set up vault and scaffold structure.
-2. Route operations to sub-skills.
-3. Maintain hot cache and index/log updates after every operation.
-4. Use frontmatter, wikilinks, and the forward-only hub model.
-5. Never modify `.raw/`.
+1. Route operations to sub-skills.

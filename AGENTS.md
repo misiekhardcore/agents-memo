@@ -57,7 +57,7 @@ All skills live in `skills/<name>/SKILL.md` and are auto-discovered by the harne
 
 |Skill|Trigger phrases|
 |-|-|
-|`memo-wiki`|`/memo-wiki`, set up wiki, scaffold vault, check setup|
+|`memo-wiki`|`/memo-wiki`, route vault operations, promote tags, check setup; vault setup via `/memo:init`|
 |`memo-ingest`|ingest, ingest this url, ingest this image, batch ingest|
 |`memo-query`|query, what do you know about, query quick:, query deep:|
 |`memo-lint`|lint the wiki, health check, find orphans, dead links|
@@ -106,12 +106,19 @@ See `_shared/documentation-standards.md`. All skill and reference docs follow th
 
 ## Cross-Project Access
 
-Add to other projects' `.pi/agent/settings.json`:
+Add this block to other projects' `AGENTS.md` (pi loads it when the project is
+CWD; `~/.pi/agent/AGENTS.md` for global coverage). The `<!-- agents-memo:begin -->`…
+`<!-- agents-memo:end -->` HTML-comment markers make the zone refreshable by
+`/memo:init` without touching hand-written content. `/memo:init` offers to
+append it automatically when initializing from inside a consumer project:
 ```markdown
+<!-- agents-memo:begin -->
 ## Wiki Knowledge Base
 Path: /path/to/vault
 When needed: (1) read wiki/hot.md first, (2) read wiki/index.md, (3) drill into domain pages.
-Do NOT read for general coding questions.
+Use it for architectural quirks and complex concepts; skip it for straightforward
+questions answerable from common knowledge or the code.
+<!-- agents-memo:end -->
 ```
 
 # Agent Architecture
@@ -152,3 +159,11 @@ Agent files are declarative single-responsibility specs. They follow this struct
 6. Output format
 
 Do not add procedural boilerplate. Reference `_shared/` files for shared protocols.
+
+<!-- agents-memo:begin -->
+## Wiki Knowledge Base
+Path: /home/michal/Projects/llm-memory
+When needed: (1) read wiki/hot.md first, (2) read wiki/index.md, (3) drill into domain pages.
+Use it for architectural quirks and complex concepts; skip it for straightforward
+questions answerable from common knowledge or the code.
+<!-- agents-memo:end -->

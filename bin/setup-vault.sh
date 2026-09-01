@@ -38,17 +38,21 @@ mkdir -p "$VAULT/wiki/concepts" "$VAULT/wiki/entities" "$VAULT/wiki/sources" "$V
 mkdir -p "$VAULT/_templates"
 
 # ── 2. Copy Obsidian default configs (graph.json, app.json, appearance.json) ──
-# These are overwritten on every run so the vault stays in sync with the
-# plugin's expected filters and color groups.
+# Copied only on FIRST setup (no existing app.json) so re-running init on an
+# existing vault never clobbers user-customized Obsidian config. Force a
+# re-sync with AGENTS_MEMO_SYNC_OBSIDIAN=1.
 if [ ! -d "$DEFAULTS_DIR" ]; then
   echo "Error: defaults directory not found at $DEFAULTS_DIR" >&2
   exit 1
 fi
-
-for src in "$DEFAULTS_DIR"/*.json; do
-  [ -e "$src" ] || continue
-  cp "$src" "$OBSIDIAN/$(basename "$src")"
-done
+if [ ! -f "$OBSIDIAN/app.json" ] || [ "${AGENTS_MEMO_SYNC_OBSIDIAN:-0}" = "1" ]; then
+  for src in "$DEFAULTS_DIR"/*.json; do
+    [ -e "$src" ] || continue
+    cp "$src" "$OBSIDIAN/$(basename "$src")"
+  done
+else
+  echo "Skipping Obsidian config copy (existing config found — set AGENTS_MEMO_SYNC_OBSIDIAN=1 to force)"
+fi
 
 # ── 5. Download Excalidraw main.js (8MB, not in git) ─────────────────────────
 EXCALIDRAW="$OBSIDIAN/plugins/obsidian-excalidraw-plugin"

@@ -1505,14 +1505,14 @@ section("PM2-sweep — cross-project promotion");
     assert(sweepPromoteGlobal(VAULT, 2).promoted === 0, "project read failure → that project skipped");
     failReads.delete("wiki/projects/sweep-b/core.md");
 
-    // /memo-wiki promote-global command: registered with a description and wired
+    // /memo:promote-global command: registered with a description and wired
     // to the same sweep. The AC17-invalidation section leaves the module's
     // cached vault pointing at a scratch cwd; firing session_shutdown (which
     // clears the cache after re-resolving) makes the handler re-resolve to
     // the restored VAULT settings on its next getVaultPath().
     mock.handlers["session_shutdown"].forEach((h) => h({}, mock.ctx));
-    const cmd = mock.commands.find((c) => c.name === "memo-wiki promote-global");
-    assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki promote-global registered with description");
+    const cmd = mock.commands.find((c) => c.name === "memo:promote-global");
+    assert(!!cmd && !!cmd?.opts?.description, "/memo:promote-global registered with description");
     projectFiles.delete("wiki/global-core.md");
     await cmd.opts.handler("", mock.ctx);
     const afterCmd = projectFiles.get("wiki/global-core.md") ?? "";
@@ -1667,10 +1667,52 @@ section("core-compact — compactCoreFile round-trip");
   projectFiles.delete(relPath);
 }
 
+section("init — command registration");
+{
+  const cmd = mock.commands.find((c) => c.name === "memo:init");
+  assert(!!cmd && !!cmd?.opts?.description, "/memo:init registered with description");
+  assert(cmd.opts.description.includes("lint"), "init description mentions the lint timer");
+}
+
+section("init — upsertMarkedBlock marker contract (issue: doc-example clobber)");
+{
+  const { upsertMarkedBlock } = memoMod;
+  const begin = "<!-- agents-memo:begin -->";
+  const end = "<!-- agents-memo:end -->";
+  const block = `${begin}\n## Wiki Knowledge Base\nPath: /v\n${end}\n`;
+
+  // Mid-file doc example (code fence explaining the markers) must be preserved
+  // when no end-of-file managed block exists — the block is appended instead.
+  const docExample =
+    `# Project\n\nSee:\n\`\`\`\n${begin}\n## Example\n${end}\n\`\`\`\n\n## Notes\nkeep\n`;
+  const appended = upsertMarkedBlock(docExample, block);
+  assert(appended.endsWith(block), "block appended at end of file");
+  assert(appended.includes("## Example"), "mid-file doc example preserved");
+  assert(appended.includes("## Notes\nkeep"), "content after doc example preserved");
+
+  // End-of-file managed block is replaced (idempotent), doc example untouched.
+  const withLive = `${docExample}${block}`;
+  const replaced = upsertMarkedBlock(withLive, block.replace("/v", "/v2"));
+  assert(replaced.includes("Path: /v2"), "end-of-file block replaced with new value");
+  assert(!replaced.includes("Path: /v\n"), "old block value gone");
+  assert(replaced.includes("## Example"), "doc example still untouched");
+  assert((replaced.match(/agents-memo:begin/g) ?? []).length === 2, "exactly one live block");
+
+  // No markers at all → appended.
+  assert(upsertMarkedBlock("# A\n", block).endsWith(block), "appends when no markers");
+  // Empty file.
+  assert(upsertMarkedBlock("", block) === block, "empty file gets just the block");
+  // Pair NOT at the end of the file (real content follows) → append, never clobber.
+  const liveMid = `${block}# MORE\n`;
+  const appendedMid = upsertMarkedBlock(liveMid, block);
+  assert(appendedMid.endsWith(block), "non-end pair preserved, block appended");
+  assert((appendedMid.match(/agents-memo:begin/g) ?? []).length === 2, "old pair kept, new block added");
+}
+
 section("core-compact — command registration + config defaults");
 {
-  const cmd = mock.commands.find((c) => c.name === "memo-wiki compact-core");
-  assert(!!cmd && !!cmd?.opts?.description, "/memo-wiki compact-core registered with description");
+  const cmd = mock.commands.find((c) => c.name === "memo:compact-core");
+  assert(!!cmd && !!cmd?.opts?.description, "/memo:compact-core registered with description");
   assert(cmd.opts.description.includes("near-duplicate"), "description mentions near-duplicate merging");
 
   const cfg = memoMod.readPiSettings();

@@ -120,17 +120,33 @@ Registers lifecycle handlers and tools for pi sessions:
 
 Also registers the `memo_dispatch` tool for delegating work to vault sub-agents (single, parallel, chain modes).
 
+### Commands
+
+- `/memo:init` — initialize a vault: bootstrap (`wiki-init.sh`), `git init`,
+  write the vault `AGENTS.md`, and offer the weekly lint timer
+  (`bin/install-lint-service.sh`) plus a Wiki Knowledge Base pointer in the CWD
+  project's `AGENTS.md`.
+- `/memo:promote-global` — deterministic cross-project promotion sweep into
+  `wiki/global-core.md` (on-demand counterpart of the session-shutdown trigger).
+- `/memo:compact-core` — merge near-duplicate bullets in the project core.
+
+All three are single-token names, so they are slash-dispatchable in the TUI.
+
 ## Scheduled Maintenance
 
-Lint is **opt-in via OS scheduler** (cron, systemd timers, launchd). Use `bin/wiki-lint-cron.sh` to run the memo-lint skill with auto-fix and commit.
+Lint is **opt-in via a systemd user timer**. `bin/wiki-lint-cron.sh` runs the
+memo-lint skill via `pi -p` (headless) with auto-fix and commit. Install the
+weekly timer with:
 
-**Example crontab (weekly, Sunday 03:00):**
-```cron
-0 3 * * 0 /absolute/path/to/agents-memo/bin/wiki-lint-cron.sh
+```bash
+bin/install-lint-service.sh              # weekly, Sun 03:00 (Persistent=true)
+bin/install-lint-service.sh --uninstall  # remove it
+bin/install-lint-service.sh --schedule "Mon *-*-* 02:00:00"  # custom OnCalendar
 ```
 
-**systemd user timer:**
-Create `~/.config/systemd/user/wiki-lint.service` and `~/.config/systemd/user/wiki-lint.timer`, then `systemctl --user enable --now wiki-lint.timer`.
+Installs `agents-memo-wiki-lint.{service,timer}` user units; logs in journald
+(`journalctl --user -u agents-memo-wiki-lint.service`). Requires Obsidian
+running and the agents-memo package registered in pi.
 
 ## Contributing
 
