@@ -1674,6 +1674,41 @@ section("init — command registration");
   assert(cmd.opts.description.includes("lint"), "init description mentions the lint timer");
 }
 
+section("init — upsertMarkedBlock marker contract (issue: doc-example clobber)");
+{
+  const { upsertMarkedBlock } = memoMod;
+  const begin = "<!-- agents-memo:begin -->";
+  const end = "<!-- agents-memo:end -->";
+  const block = `${begin}\n## Wiki Knowledge Base\nPath: /v\n${end}\n`;
+
+  // Mid-file doc example (code fence explaining the markers) must be preserved
+  // when no end-of-file managed block exists — the block is appended instead.
+  const docExample =
+    `# Project\n\nSee:\n\`\`\`\n${begin}\n## Example\n${end}\n\`\`\`\n\n## Notes\nkeep\n`;
+  const appended = upsertMarkedBlock(docExample, block);
+  assert(appended.endsWith(block), "block appended at end of file");
+  assert(appended.includes("## Example"), "mid-file doc example preserved");
+  assert(appended.includes("## Notes\nkeep"), "content after doc example preserved");
+
+  // End-of-file managed block is replaced (idempotent), doc example untouched.
+  const withLive = `${docExample}${block}`;
+  const replaced = upsertMarkedBlock(withLive, block.replace("/v", "/v2"));
+  assert(replaced.includes("Path: /v2"), "end-of-file block replaced with new value");
+  assert(!replaced.includes("Path: /v\n"), "old block value gone");
+  assert(replaced.includes("## Example"), "doc example still untouched");
+  assert((replaced.match(/agents-memo:begin/g) ?? []).length === 2, "exactly one live block");
+
+  // No markers at all → appended.
+  assert(upsertMarkedBlock("# A\n", block).endsWith(block), "appends when no markers");
+  // Empty file.
+  assert(upsertMarkedBlock("", block) === block, "empty file gets just the block");
+  // Pair NOT at the end of the file (real content follows) → append, never clobber.
+  const liveMid = `${block}# MORE\n`;
+  const appendedMid = upsertMarkedBlock(liveMid, block);
+  assert(appendedMid.endsWith(block), "non-end pair preserved, block appended");
+  assert((appendedMid.match(/agents-memo:begin/g) ?? []).length === 2, "old pair kept, new block added");
+}
+
 section("core-compact — command registration + config defaults");
 {
   const cmd = mock.commands.find((c) => c.name === "memo:compact-core");

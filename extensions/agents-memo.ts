@@ -21,7 +21,6 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import {
-  appendFileSync,
   existsSync,
   readFileSync,
   readdirSync,
@@ -1808,24 +1807,38 @@ function writeVaultAgentsMd(vaultPath: string): void {
     // agents-md marker contract: refresh only the marked zone; leave
     // hand-written (unmarked) vault AGENTS.md files alone.
     const existing = readFileSync(target, "utf-8");
-    const begin = "<!-- agents-memo:begin -->";
-    const end = "<!-- agents-memo:end -->";
-    const b = existing.indexOf(begin);
-    const e = existing.indexOf(end);
-    if (b !== -1 && e !== -1 && e > b) {
-      writeFileSync(target, `${existing.slice(0, b)}${content}${existing.slice(e + end.length)}`);
-    }
+    const updated = upsertMarkedBlock(existing, content);
+    if (updated !== existing) writeFileSync(target, updated);
     return;
   }
   writeFileSync(target, content);
 }
 
-// HTML-comment markers delimit the plugin-managed zone in a project's
-// AGENTS.md (same contract as the agents-md ecosystem tooling): re-running
-// replaces only the marked block, hand-written content is preserved, and the
-// zone is invisible in rendered markdown.
+// HTML-comment markers delimit the plugin-managed zone in an AGENTS.md (same
+// contract as the agents-md ecosystem tooling): re-running replaces only the
+// marked block, hand-written content is preserved, and the zone is invisible
+// in rendered markdown.
 const WIKI_POINTER_BEGIN = "<!-- agents-memo:begin -->";
 const WIKI_POINTER_END = "<!-- agents-memo:end -->";
+
+// Upsert a marker-wrapped block into markdown content.
+//
+// The managed block lives at the END of the file (append contract). Only a
+// complete `begin … end` pair at the end of the file is replaced; any other
+// marker occurrences (e.g. code-fenced doc examples explaining the format) are
+// never touched. Returns the original content when nothing changes.
+export function upsertMarkedBlock(content: string, block: string): string {
+  const b = content.lastIndexOf(WIKI_POINTER_BEGIN);
+  const e = content.lastIndexOf(WIKI_POINTER_END);
+  if (b !== -1 && e > b) {
+    const after = content.slice(e + WIKI_POINTER_END.length);
+    if (after.trim() === "") {
+      return `${content.slice(0, b)}${block}${after}`;
+    }
+  }
+  const separator = content.length === 0 || content.endsWith("\n") ? "" : "\n";
+  return `${content}${separator}${block}`;
+}
 
 function appendWikiPointer(cwd: string, vaultPath: string): void {
   const target = join(cwd, "AGENTS.md");
@@ -1838,16 +1851,10 @@ function appendWikiPointer(cwd: string, vaultPath: string): void {
     `questions answerable from common knowledge or the code.\n` +
     `${WIKI_POINTER_END}\n`;
   const existing = existsSync(target) ? readFileSync(target, "utf-8") : "";
-  const b = existing.indexOf(WIKI_POINTER_BEGIN);
-  const e = existing.indexOf(WIKI_POINTER_END);
-  if (b !== -1 && e !== -1 && e > b) {
-    writeFileSync(
-      target,
-      `${existing.slice(0, b)}${block}${existing.slice(e + WIKI_POINTER_END.length)}`,
-    );
-    return;
+  const updated = upsertMarkedBlock(existing, block);
+  if (updated !== existing || !existsSync(target)) {
+    writeFileSync(target, updated);
   }
-  appendFileSync(target, `\n${block}`);
 }
 
 export default function (pi: ExtensionAPI) {
