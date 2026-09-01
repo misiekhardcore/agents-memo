@@ -25,7 +25,7 @@ If today's JSON is missing, run the scan as a fallback:
 MEMO_PLUGIN_PWD="${MEMO_PLUGIN_PWD}" bash "${MEMO_PLUGIN_PWD}/scripts/lint-scan.sh"
 ```
 
-JSON is authoritative for dead_links, orphans, unresolved_targets, backlinks, anti_patterns, scope. Do NOT run `obsidian deadends`, `orphans`, or per-page `backlinks` — JSON is canonical.
+JSON is authoritative for dead_links, orphans, unresolved_targets, backlinks, anti_patterns, duplicate_headings, scope. Do NOT run `obsidian deadends`, `orphans`, or per-page `backlinks` — JSON is canonical.
 
 ## Step 2 — Agent-driven checks
 
@@ -42,6 +42,7 @@ Work through checks in `skills/lint/SKILL.md` order using JSON where available. 
 - **#14 (notes inbox):** `obsidian files dir=notes format=json` to list; `obsidian read path=<note>` per file.
 - **#15 (misplaced index):** `obsidian read path=wiki/index.md` + `obsidian read path=<linked-page>` per entry.
 - **#16 (trail integrity):** `obsidian files dir=wiki/trails format=json` to list; `obsidian read path=<trail>` per file.
+- **#17 (duplicate headings):** use JSON `duplicate_headings`. Each entry is `{source_page, heading, count}`. Report each as `[[slug]]: duplicate heading "<heading>" (N occurrences)`.
 
 Canvas files in `wiki/canvases/` are first-class. Use `scope.scanned_dirs` to stay in scope.
 

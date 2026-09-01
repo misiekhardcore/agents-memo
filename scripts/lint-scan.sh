@@ -197,12 +197,15 @@ for page in "${md_pages[@]}"; do
   done < <(grep -oP '(?<=\[\[)[^\]]+(?=\]\])' <<< "$content" 2>/dev/null | sort -u)
 done
 
-# ─── Empty sections ──────────────────────────────────────────────────────────
+# ─── Empty sections + duplicate headings ────────────────────────────────────
 # A heading (## or deeper) is empty when the next non-blank line is another
 # heading or there are no further non-blank lines. Frontmatter and code blocks
 # are excluded so fenced content can't produce false positives.
+# Duplicate headings are counted in the same pass (same heading-line semantics
+# as check #7 and the index-section-insert script: exact line, ## or deeper).
 
 empty_sections_entries=()
+duplicate_headings_entries=()
 for page in "${md_pages[@]}"; do
   content=$("$CLI" read "path=${page}" 2>/dev/null) || continue
 
@@ -211,6 +214,7 @@ for page in "${md_pages[@]}"; do
   prev_heading=""
   saw_content=false
   first_line=true
+  declare -A page_heading_counts=()
 
   while IFS= read -r line; do
     if $first_line; then
@@ -235,6 +239,7 @@ for page in "${md_pages[@]}"; do
         )
       fi
       prev_heading="$line"; saw_content=false
+      page_heading_counts["$line"]=$(( ${page_heading_counts["$line"]:-0} + 1 ))
     elif [[ -n "${line// }" ]]; then
       saw_content=true
     fi
@@ -245,6 +250,21 @@ for page in "${md_pages[@]}"; do
       "$(jq -n --arg p "$page" --arg h "$prev_heading" \
            '{source_page: $p, heading: $h}')"
     )
+  fi
+
+  # Empty-map guard: `${!map[@]}` on an empty associative array is an unbound-
+  # variable error under `set -u` on bash 4.0-4.3 (safe on 4.4+; kept for
+  # portability and to avoid needless map expansion on heading-less pages).
+  if [[ ${#page_heading_counts[@]} -gt 0 ]]; then
+    for h in "${!page_heading_counts[@]}"; do
+      c=${page_heading_counts["$h"]}
+      if [ "$c" -gt 1 ]; then
+        duplicate_headings_entries+=(
+          "$(jq -n --arg p "$page" --arg h "$h" --argjson c "$c" \
+               '{source_page: $p, heading: $h, count: $c}')"
+        )
+      fi
+    done
   fi
 done
 
@@ -316,6 +336,13 @@ else
   empty_sections_json='[]'
 fi
 
+if [[ ${#duplicate_headings_entries[@]} -gt 0 ]]; then
+  duplicate_headings_json=$(printf '%s\n' "${duplicate_headings_entries[@]}" \
+    | jq -s 'sort_by(.source_page, .heading)')
+else
+  duplicate_headings_json='[]'
+fi
+
 if [[ ${#backlink_counts[@]} -eq 0 ]]; then
   backlinks_json='{}'
 else
@@ -343,6 +370,7 @@ output=$(jq -n \
   --argjson unresolved_targets "$unresolved_json" \
   --argjson anti_patterns      "$anti_json" \
   --argjson empty_sections     "$empty_sections_json" \
+  --argjson duplicate_headings "$duplicate_headings_json" \
   --argjson backlinks          "$backlinks_json" \
   '{
     scan_date:           $scan_date,
@@ -353,6 +381,7 @@ output=$(jq -n \
     unresolved_targets:  $unresolved_targets,
     anti_patterns:       $anti_patterns,
     empty_sections:      $empty_sections,
+    duplicate_headings:  $duplicate_headings,
     backlinks:           $backlinks
   }')
 

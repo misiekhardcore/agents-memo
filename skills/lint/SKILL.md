@@ -15,7 +15,7 @@ Health check for wiki orphans, dead links, frontmatter gaps. Ask before auto-fix
 
 ## Process
 1. **Scan**: `cd "${VAULT_ROOT}" && pwd && bash "${MEMO_PLUGIN_PWD}/scripts/lint-scan.sh"` → produces `wiki/meta/lint-data-YYYY-MM-DD.json`. Scope per `references/scan-scope.md`.
-2. **Audit**: Dispatch `agents/memory-lint.md` with `vault_path=$VAULT_ROOT` and `scope="full"`. Agent runs 16 checks (#1–#2, #6–#16) per `references/checks.md` and drafts report.
+2. **Audit**: Dispatch `agents/memory-lint.md` with `vault_path=$VAULT_ROOT` and `scope="full"`. Agent runs 17 checks (#1–#2, #6–#17) per `references/checks.md` and drafts report.
 3. **Review**: Present report (summary + per-section findings) to user. Ask "Auto-fix or review each?" before applying changes.
 4. **Rotate**: `bash $MEMO_PLUGIN_PWD/scripts/prune-lint-reports.sh --force` to keep 3 most recent.
 5. **Maintain**: If auto-fixes modified pages, update `wiki/hot.md` per `skills/hot-cache-protocol/SKILL.md`.

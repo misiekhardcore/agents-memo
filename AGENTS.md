@@ -87,7 +87,7 @@ Skills dispatch sub-agents to parallelize heavy lifting and avoid context bloat:
 
 - **`memo-ingest`** → `agents/memory-ingest.md` (one per source; writes wiki pages/index)
 - **`memo-braindump`** → `agents/memory-capture.md` (parallel when independent; sequential when order matters)
-- **`memo-lint`** → `agents/memory-lint.md` (runs all 16 checks; drafts report)
+- **`memo-lint`** → `agents/memory-lint.md` (runs all 17 checks; drafts report)
 - **`memo-autoresearch`** → `agents/memory-research-round.md` + `agents/memory-source-synth.md` (search/fetch/synthesis)
 - **`memo-query`** → `agents/memory-gather.md` (parallel page reads when list > 5 pages)
 

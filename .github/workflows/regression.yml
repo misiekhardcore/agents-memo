@@ -59,3 +59,5 @@ jobs:
       - run: bash tests/regression/read-canvas.sh
       - run: bash tests/regression/pi-settings-tier.sh
       - run: bash tests/regression/prune-lint-guard.sh
+      - run: bash tests/regression/index-section-insert.sh
+      - run: bash tests/regression/lint-duplicate-headings.sh
