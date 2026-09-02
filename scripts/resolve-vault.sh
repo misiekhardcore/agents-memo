@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Resolve the vault path in priority order:
-#   0a. ~/.pi/agent/settings.json  (agentsMemo.vaultPath)
+#   0a. ${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json  (agentsMemo.vaultPath)
+#      — pi's config-dir override (PI_CODING_AGENT_DIR) propagates here so a
+#      redirected config dir (isolated sessions, demos) targets its own vault.
 #   0b. .pi/settings.json          (merged, agentsMemo.vaultPath)
 #   1. $1 argument (legacy; no longer passed by hooks as of #36)
 #   2. $(pwd) if it contains a wiki/ subdirectory
@@ -59,8 +61,10 @@ except Exception:
 
 VAULT=""
 
-# Priority tier 0: pi settings (both global and merged project files)
-for pi_settings in "$HOME/.pi/agent/settings.json" "$(pwd)/.pi/settings.json"; do
+# Priority tier 0: pi settings (both global and merged project files). The
+# global file lives in pi's config dir, which PI_CODING_AGENT_DIR may override.
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+for pi_settings in "$PI_AGENT_DIR/settings.json" "$(pwd)/.pi/settings.json"; do
   [ -n "$VAULT" ] && break
   VAULT=$(read_vault_from_pi_settings "$pi_settings")
 done

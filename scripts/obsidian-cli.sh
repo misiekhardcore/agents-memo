@@ -41,11 +41,17 @@
 # New error shapes from a future CLI version must be captured by re-running
 # scripts/cli-spike.sh and added here.
 #
-# ─── vault=<name> is name-only ───────────────────────────────────────────────
+# ─── vault=<name> is name-only AND position-sensitive ───────────────────────
 # The CLI's `vault=` parameter accepts a vault NAME (basename), not a path.
 # Passing `vault=/some/path` returns "Vault not found." with exit 0. The
 # wrapper always passes the basename of $VAULT so callers never have to think
 # about it.
+#
+# Position: `vault=` is a GLOBAL option and must PRECEDE the command verb
+# (`obsidian vault=<name> <verb> ...`). Passed after the verb it is silently
+# ignored and the command executes against the Obsidian-active vault, which
+# is wrong whenever more than one vault is open. Both exec sites below
+# therefore put `vault=$VAULT_NAME` first.
 #
 # ─── Escape hatches (in increasing risk order) ───────────────────────────────
 #   1. `obsidian-cli.sh command id=<command-id>` — runs an Obsidian command by
@@ -198,7 +204,7 @@ fi
 run_obs() {
   local tmp first cli_exit
   tmp="$(mktemp)"
-  obsidian "$@" "vault=$VAULT_NAME" >"$tmp" 2>&2
+  obsidian "vault=$VAULT_NAME" "$@" >"$tmp" 2>&2
   cli_exit=$?
   cat "$tmp"
   first="$(head -n 1 "$tmp" 2>/dev/null || true)"
@@ -447,7 +453,7 @@ esac
 TMP_OUT="$(mktemp)"
 trap 'rm -f "$TMP_OUT"' EXIT
 
-obsidian "$@" "vault=$VAULT_NAME" >"$TMP_OUT" 2>&2
+obsidian "vault=$VAULT_NAME" "$@" >"$TMP_OUT" 2>&2
 CLI_EXIT=$?
 
 # 5. Pass stdout through to the caller verbatim.
