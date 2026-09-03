@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Resolve a plugin config value in priority order:
-#   0a. ~/.pi/agent/settings.json  (agentsMemo.<key>)
+#   0a. ${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json  (agentsMemo.<key>)
 #   0b. .pi/settings.json          (merged, agentsMemo.<key>)
 #   1. ~/.claude/settings.local.json  (pluginConfigs[*agents-memo*].options.<key>)
 #   2. ~/.claude/settings.json        (same key, userSettings scope)
@@ -80,7 +80,8 @@ except Exception:
 
 VALUE=""
 # Priority tier 0: pi settings
-for pi_settings in "$HOME/.pi/agent/settings.json" "$(pwd)/.pi/settings.json"; do
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+for pi_settings in "$PI_AGENT_DIR/settings.json" "$(pwd)/.pi/settings.json"; do
   [ -n "$VALUE" ] && break
   VALUE=$(read_config_from_pi_settings "$pi_settings")
 done

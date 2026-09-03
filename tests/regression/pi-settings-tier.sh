@@ -119,6 +119,26 @@ check "nested projectMemory.enabled from project tier (false resolves)" "false" 
 # 13. No pi settings → project_memory_enabled falls to the default argument.
 rm -f "$HOME/.pi/agent/settings.json" "$SCRATCH/.pi/settings.json"
 check "project_memory_enabled default fallback" "true" "$(bash "$RESOLVE_CONFIG" project_memory_enabled true)"
+# 14. PI_CODING_AGENT_DIR override wins over $HOME/.pi/agent/settings.json
+#     (config-dir redirection must propagate to vault + key resolution).
+rm -f "$HOME/.pi/agent/settings.json" "$SCRATCH/.pi/settings.json"
+rm -rf "$SCRATCH/wiki"
+write_global '{"agentsMemo": { "vaultPath": "~/home-vault" }}'
+mkdir -p "$HOME/home-vault" "$SCRATCH/override-agent" "$SCRATCH/override-vault"
+printf '{"agentsMemo": { "vaultPath": "%s", "autoCommit": false }}' "$SCRATCH/override-vault" > "$SCRATCH/override-agent/settings.json"
+export PI_CODING_AGENT_DIR="$SCRATCH/override-agent"
+check "PI_CODING_AGENT_DIR vaultPath wins over HOME tier" "$SCRATCH/override-vault" "$(bash "$RESOLVE_VAULT")"
+check "PI_CODING_AGENT_DIR key resolution" "false" "$(bash "$RESOLVE_CONFIG" auto_commit)"
+
+# 15. Override replaces the config dir: without vaultPath it falls through to
+#     lower tiers and does NOT consult the $HOME tier.
+mkdir -p "$SCRATCH/wiki"
+printf '%s\n' '{}' > "$SCRATCH/override-agent/settings.json"
+check "override dir without vaultPath falls to CWD wiki (HOME tier not consulted)" "$SCRATCH" "$(bash "$RESOLVE_VAULT")"
+unset PI_CODING_AGENT_DIR
+rm -rf "$SCRATCH/wiki" "$SCRATCH/override-agent" "$HOME/home-vault"
+
+rm -f "$HOME/.pi/agent/settings.json"
 
 echo
 echo "=== summary ==="
