@@ -50,5 +50,9 @@ Same as the Greenfield Flow. Call `run_build_loop(workspace, task, plan)` for ea
    git push origin <rework_branch>
    ```
    If push fails, report the error to the user.
-4. Call `destroy_workspace(workspace)` to release the worktree.
-5. Post a summary of what was pushed, referencing the existing PR number.
+4. Run the `memo-save` skill (see the implement orchestrator's "Memory
+   (memo- skills)" section) to persist the session's learnings into
+   project memory. Best-effort - skip if the `memo-` skills are
+   unavailable.
+5. Call `destroy_workspace(workspace)` to release the worktree.
+6. Post a summary of what was pushed, referencing the existing PR number.

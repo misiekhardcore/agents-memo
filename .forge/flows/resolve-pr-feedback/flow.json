@@ -97,7 +97,7 @@
         {
           "type": "shell",
           "id": "post_reply",
-          "command": "cat > /tmp/ff-reply-$$.md << 'FFEOF'\n{{reply}}\nFFEOF\ngh api graphql -f query='mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id}}}' -F threadId={{threadId}} -F body=@/tmp/ff-reply-$$.md; status=$?; rm -f /tmp/ff-reply-$$.md; exit $status",
+          "command": "cat > /var/tmp/ff-reply-$$.md << 'FFEOF'\n{{reply}}\nFFEOF\ngh api graphql -f query='mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id}}}' -F threadId={{threadId}} -F body=@/var/tmp/ff-reply-$$.md; status=$?; rm -f /var/tmp/ff-reply-$$.md; exit $status",
           "failFast": true
         },
         {

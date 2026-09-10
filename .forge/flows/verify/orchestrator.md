@@ -4,6 +4,7 @@ role: orchestrator
 model: smart
 skills:
   - notes-md
+  - memo-*
 tools:
   - check
   - set_flow_param
@@ -46,6 +47,30 @@ check(changes=<the code or changes to verify>, workspace=<absolute path to the w
 3. Call `check(changes=..., workspace=...)` with the mapped params.
 4. Report the verdict and key findings from the routine result — the verify
    step returns JSON with `passed` and findings.
+
+## Memory (memo- skills)
+
+This session may have a `memo-` skill namespace for persistent project
+memory (provided by an external memory plugin). The skills below are
+available when the plugin is installed - read the relevant `SKILL.md`
+before using:
+
+|Skill|Command|Purpose|
+|-|-|-|
+|`memo-query`|`/memo-query`|Ask project memory for prior notes before planning|
+|`memo-save`|`/memo-save`|File session learnings as permanent memory entries|
+|`memo-notes`|`/memo-notes`|Quick inbox capture|
+|`memo-daily`|`/memo-daily`|Timestamped daily log lines|
+|`memo-wiki`|`/memo-wiki`|Memory routing and scaffolding|
+
+These skills are declared here for documentation - the in-session
+orchestrator resolves them via the session's ambient skill discovery; the
+spec `skills:` allowlist (`memo-*`) is enforced only for subprocess
+agents.
+
+Use memory for context (`memo-query`) and as a write target for durable
+learnings (`memo-save`). Memory access is best-effort: if the `memo-`
+skills are unavailable, skip gracefully - never fail the flow over memory.
 
 ## Rules
 

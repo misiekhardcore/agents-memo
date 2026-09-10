@@ -4,6 +4,7 @@ role: orchestrator
 model: smart
 skills:
   - notes-md
+  - memo-*
 tools:
   - set_flow_param
   - set_session_name
@@ -202,6 +203,12 @@ After each call:
      markdown summary. Use `--body-file` with a temp file instead of inline
      `--body` to avoid shell quoting issues with backticks and special characters.
 3. If `open_pr` succeeds:
+   - **Persist learnings.** Run the `memo-save` skill (see "Memory (memo-
+     skills)" below) to file the session's project learnings - issue -> PR
+     mapping, key decisions, subtask outcomes, validation results - into
+     project memory (harvest from the session record / the PR body -
+     `<workspace>/NOTES.md` is already deleted at this point). Best-effort:
+     skip gracefully if the `memo-` skills are unavailable.
    - Call `destroy_workspace(workspace)` to release the worktree.
    - Post the PR URL to the user.
 4. If `open_pr` fails:
@@ -216,6 +223,30 @@ retry, ask the user to choose one of:
 - **(b) Discard all changes** — call `destroy_workspace(workspace)` and stop.
 - **(c) Leave as-is** — report the workspace path and stop without destroying.
   Do NOT auto-destroy the workspace — the user decides.
+
+## Memory (memo- skills)
+
+This session may have a `memo-` skill namespace for persistent project
+memory (provided by an external memory plugin). The skills below are
+available when the plugin is installed - read the relevant `SKILL.md`
+before using:
+
+|Skill|Command|Purpose|
+|-|-|-|
+|`memo-query`|`/memo-query`|Ask project memory for prior notes before planning|
+|`memo-save`|`/memo-save`|File session learnings as permanent memory entries|
+|`memo-notes`|`/memo-notes`|Quick inbox capture|
+|`memo-daily`|`/memo-daily`|Timestamped daily log lines|
+|`memo-wiki`|`/memo-wiki`|Memory routing and scaffolding|
+
+These skills are declared here for documentation - the in-session
+orchestrator resolves them via the session's ambient skill discovery; the
+spec `skills:` allowlist (`memo-*`) is enforced only for subprocess
+agents.
+
+Use memory for context (`memo-query`) and as a write target for durable
+learnings (`memo-save`). Memory access is best-effort: if the `memo-`
+skills are unavailable, skip gracefully - never fail the flow over memory.
 
 ## Rules
 
