@@ -20,15 +20,17 @@
  */
 
 import { execSync, spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import {
+  closeSync,
   existsSync,
+  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -1791,9 +1793,9 @@ function persistVaultPath(vaultPath: string): boolean {
     // Phase 1: Safe write with explicit stream handling to prevent ERR_STREAM_DESTROYED
     let fd: number | null = null;
     try {
-      fd = fs.openSync(file, "w");
-      fs.writeSync(fd, `${JSON.stringify(parsed, null, 2)}\n`);
-      fs.closeSync(fd);
+      fd = openSync(file, "w");
+      writeSync(fd, `${JSON.stringify(parsed, null, 2)}\n`);
+      closeSync(fd);
       console.log("[agents-memo] persistVaultPath: successfully wrote settings.json");
       return true;
     } catch (err) {
@@ -1809,7 +1811,7 @@ function persistVaultPath(vaultPath: string): boolean {
     } finally {
       if (fd !== null) {
         try {
-          fs.closeSync(fd);
+          closeSync(fd);
         } catch (e) {
           const eStr = String(e);
           if (!eStr.includes("ERR_STREAM_DESTROYED")) {

@@ -8,6 +8,6 @@ export default defineConfig({
     },
     globals: true,
     include: ["**/*.test.ts"], // Vitest unit tests; smoke tests use node scripts
-    exclude: ["node_modules", "dist"],
+    exclude: ["node_modules", "dist", ".forge"],
   },
 });

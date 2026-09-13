@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
-    ignores: ["dist/", "node_modules/", "tests/", "hooks/", "bin/"],
+    ignores: ["dist/", "node_modules/", "tests/", "hooks/", "bin/", ".forge/"],
   },
   {
     rules: {
