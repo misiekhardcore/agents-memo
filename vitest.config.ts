@@ -7,7 +7,7 @@ export default defineConfig({
       reporter: ["text", "text-summary"],
     },
     globals: true,
-    include: ["extensions/**/*.test.ts"],
+    include: ["**/*.test.ts"], // Vitest unit tests; smoke tests use node scripts
     exclude: ["node_modules", "dist"],
   },
 });
