@@ -7,7 +7,6 @@ export default defineConfig({
       reporter: ["text", "text-summary"],
     },
     globals: true,
-    include: ["**/*.test.ts"], // Vitest unit tests; smoke tests use node scripts
-    exclude: ["node_modules", "dist"],
+    include: [], // No vitest unit tests; all smoke/regression tests are node scripts (extension-smoke.mjs + *.sh)
   },
 });
