@@ -20,6 +20,7 @@
  */
 
 import { execSync, spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import {
   existsSync,
   readFileSync,
@@ -1787,7 +1788,6 @@ function persistVaultPath(vaultPath: string): boolean {
     parsed.agentsMemo = agentsMemo;
     
     // Phase 1: Safe write with explicit stream handling to prevent ERR_STREAM_DESTROYED
-    const fs = require("node:fs");
     let fd: number | null = null;
     try {
       fd = fs.openSync(file, "w");
