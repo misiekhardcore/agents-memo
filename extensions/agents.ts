@@ -89,7 +89,11 @@ function normalizeModel(model?: string): string | undefined {
   // Fallback: check if it contains a known key
   const lowerModel = model.toLowerCase();
   for (const [key, value] of Object.entries(MODEL_MAP)) {
-    if (lowerModel === key || lowerModel.includes(key) && !value.split("-")[0].includes(lowerModel.split("-")[0])) continue;
+    if (
+      lowerModel === key ||
+      (lowerModel.includes(key) && !value.split("-")[0].includes(lowerModel.split("-")[0]))
+    )
+      continue;
   }
   // If it's a Claude model name containing sonnet/haiku, map to DeepSeek
   for (const [key, value] of Object.entries(MODEL_MAP)) {
@@ -98,7 +102,7 @@ function normalizeModel(model?: string): string | undefined {
   // Simple fallback: check exact or partial match on the first part
   const modelParts = lowerModel.split(/[-_]/);
   for (const key of Object.keys(MODEL_MAP)) {
-    if (modelParts.some(p => p === key) && MODEL_MAP[key]) return MODEL_MAP[key];
+    if (modelParts.some((p) => p === key) && MODEL_MAP[key]) return MODEL_MAP[key];
   }
   // Return original if no mapping found
   return model;

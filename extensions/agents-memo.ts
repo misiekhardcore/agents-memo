@@ -136,8 +136,6 @@ const DEFAULT_PAGE_CANDIDACY: PageCandidacyConfig = {
   threshold: 3,
 };
 
-
-
 // Per-key validators for each nested block (type-gated merge). Declared as
 // typed constants so the merge helper infers T from the merged argument,
 // keeping the value types intact.
@@ -821,7 +819,10 @@ async function pickReflectionModel(
   const findModel = (provider: string, id: string): Model<Api> | undefined =>
     registry.find?.(provider, id) ??
     (getModel as unknown as (p: string, i: string) => Model<Api> | undefined)(provider, id);
-  const candidates = [findModel(config.reflectModel!.provider, config.reflectModel!.id), ctx.model].filter(
+  const candidates = [
+    findModel(config.reflectModel!.provider, config.reflectModel!.id),
+    ctx.model,
+  ].filter(
     (m): m is Model<Api> =>
       !!m &&
       typeof (m as { provider?: unknown }).provider === "string" &&
@@ -1786,7 +1787,7 @@ function persistVaultPath(vaultPath: string): boolean {
     const agentsMemo = (parsed.agentsMemo as Record<string, unknown>) ?? {};
     agentsMemo.vaultPath = vaultPath;
     parsed.agentsMemo = agentsMemo;
-    
+
     // Phase 1: Safe write with explicit stream handling to prevent ERR_STREAM_DESTROYED
     let fd: number | null = null;
     try {
@@ -1798,14 +1799,18 @@ function persistVaultPath(vaultPath: string): boolean {
     } catch (err) {
       const errStr = String(err);
       if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
-        console.error("[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED detected - stream cleanup issue");
+        console.error(
+          "[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED detected - stream cleanup issue",
+        );
       } else {
         console.error(`[agents-memo] persistVaultPath write error: ${errStr}`);
       }
       return false;
     } finally {
       if (fd !== null) {
-        try { fs.closeSync(fd); } catch (e) {
+        try {
+          fs.closeSync(fd);
+        } catch (e) {
           const eStr = String(e);
           if (!eStr.includes("ERR_STREAM_DESTROYED")) {
             console.error(`[agents-memo] persistVaultPath: close error: ${eStr}`);
@@ -1816,7 +1821,9 @@ function persistVaultPath(vaultPath: string): boolean {
   } catch (err) {
     const errStr = String(err);
     if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
-      console.error("[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED - file descriptor invalid");
+      console.error(
+        "[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED - file descriptor invalid",
+      );
     } else {
       console.error(`[agents-memo] persistVaultPath failed: ${errStr}`);
     }
@@ -2319,7 +2326,9 @@ export default function (pi: ExtensionAPI) {
         console.log("[agents-memo] agent_end: no reflection generated");
         return;
       }
-      console.log(`[agents-memo] agent_end: reflection generated with ${reflection.mistakes.length} mistakes, ${reflection.fixes.length} fixes`);
+      console.log(
+        `[agents-memo] agent_end: reflection generated with ${reflection.mistakes.length} mistakes, ${reflection.fixes.length} fixes`,
+      );
       appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
       updateProjectCore(
         vaultPath,
@@ -2343,7 +2352,9 @@ export default function (pi: ExtensionAPI) {
     } catch (err) {
       const errStr = String(err);
       if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
-        console.error(`[agents-memo] agent_end: ERR_STREAM_DESTROYED - stream cleanup issue during reflection`);
+        console.error(
+          `[agents-memo] agent_end: ERR_STREAM_DESTROYED - stream cleanup issue during reflection`,
+        );
       } else {
         console.error(`[agents-memo] agent_end error: ${errStr}`);
       }
