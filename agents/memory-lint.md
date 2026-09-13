@@ -1,7 +1,6 @@
 ---
 name: memory-lint
 description: Comprehensive wiki health check. Scans for orphans, dead links, frontmatter gaps, empty sections. Generates structured report. Dispatched on "lint wiki", "health check", "audit", "clean up".
-model: sonnet
 maxTurns: 40
 permissions: 
   - write: 'allow'

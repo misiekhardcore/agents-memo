@@ -7,7 +7,6 @@
     "maxToolCalls": 40,
     "maxTurns": 100
   },
-  "logDir": ".forge/logs/",
   "logRetentionDays": 7,
   "logPayloads": false,
   "worktreeSymlinks": [],
@@ -22,9 +21,7 @@
     "maxPreconnectBuffer": 2000,
     "maxOverlayHeight": "85%"
   },
-  "models": {},
   "dev": {
     "enabled": false
-  },
-  "forgeDir": ".forge"
+  }
 }

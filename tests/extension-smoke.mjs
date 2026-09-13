@@ -44,6 +44,7 @@ writeFileSync(
       bootstrapReadHot: "always",
       bootstrapReadIndex: "on-demand",
       autoCommit: true,
+      reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
     },
   }),
 );
@@ -364,6 +365,7 @@ section("AC16/17 — write-verb touched tracking");
       bootstrapReadHot: "always",
       bootstrapReadIndex: "on-demand",
       autoCommit: true,
+      reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
       projectMemory: { reflectUntouchedRuns: false },
     },
   }));
@@ -569,6 +571,7 @@ section("AC14b - agent_settled auto-push (opt-in)");
       bootstrapReadHot: "always",
       bootstrapReadIndex: "on-demand",
       autoCommit: true,
+      reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
       autoPush: true,
     },
   }));
@@ -620,6 +623,7 @@ section("AC14b - agent_settled auto-push (opt-in)");
         bootstrapReadHot: "always",
         bootstrapReadIndex: "on-demand",
         autoCommit: true,
+        reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
         autoPush: false,
       },
     }));
@@ -640,6 +644,7 @@ section("AC14b - agent_settled auto-push (opt-in)");
         bootstrapReadHot: "always",
         bootstrapReadIndex: "on-demand",
         autoCommit: false,
+        reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
         autoPush: true,
       },
     }));
@@ -659,6 +664,7 @@ section("AC14b - agent_settled auto-push (opt-in)");
         bootstrapReadHot: "always",
         bootstrapReadIndex: "on-demand",
         autoCommit: true,
+        reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
         autoPush: true,
       },
     }));
@@ -780,13 +786,14 @@ section("AC11-worktree — session_compact uses lastCwd");
     agentsMemo: {
       vaultPath: worktreeVault,
       bootstrapReadHot: "always",
+      reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" },
     },
   }));
 
   const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
   // No vaultPath in global settings — worktree tier fills it.
   writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
-    agentsMemo: { bootstrapReadHot: "always" },
+    agentsMemo: { bootstrapReadHot: "always", reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" } },
   }));
 
   const origCwd = process.cwd();
@@ -974,7 +981,7 @@ section("project-memory — enabled=false falls back to legacy daily marker");
 {
   const origPi = readFileSync(join(HOME, ".pi", "agent", "settings.json"), "utf-8");
   writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
-    agentsMemo: { vaultPath: VAULT, projectMemory: { enabled: false } },
+    agentsMemo: { vaultPath: VAULT, reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" }, projectMemory: { enabled: false } },
   }));
   try {
     await settledEnd({ messages: [] }); // consume residual flag
@@ -1376,7 +1383,7 @@ section("PM2-agent_end — reflectUntouchedRuns gate + global write");
 
     // reflectUntouchedRuns=false → untouched run skips everything.
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
-      agentsMemo: { vaultPath: VAULT, projectMemory: { reflectUntouchedRuns: false } },
+      agentsMemo: { vaultPath: VAULT, reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" }, projectMemory: { reflectUntouchedRuns: false } },
     }));
     const execBefore2 = calls.exec.length;
     await settledEnd(agentEndEv());
@@ -1385,7 +1392,7 @@ section("PM2-agent_end — reflectUntouchedRuns gate + global write");
 
     // globalEnabled=false → project pipeline still runs, global write skipped.
     writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
-      agentsMemo: { vaultPath: VAULT, projectMemory: { globalEnabled: false } },
+      agentsMemo: { vaultPath: VAULT, reflectModel: { provider: "deepseek", id: "deepseek-v4-flash" }, projectMemory: { globalEnabled: false } },
     }));
     const writeEv = { toolCallId: "t-pm2g", toolName: "bash", input: { command: `obsidian create path=wiki/concepts/pm2.md content="x"` } };
     mock.handlers["tool_call"][0](writeEv, mock.ctx);
@@ -1550,7 +1557,7 @@ section("M2 — claude settings tiers in extension resolution");
       pluginConfigs: { "claude-code-agents-memo": { options: opts } },
     }));
   writeFileSync(join(HOME, ".pi", "agent", "settings.json"), JSON.stringify({
-    agentsMemo: { bootstrapReadHot: "always" }, // no vaultPath
+    agentsMemo: { bootstrapReadHot: "always" }, // no vaultPath — test Claude settings resolution
   }));
   try {
     writeClaude("settings.json", { vault_path: "~/claude-vault" });

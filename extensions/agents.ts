@@ -11,7 +11,6 @@
  *     over permissions; "Agent" is always dropped; web tools survive when
  *     allowed; memo_dispatch is opt-in via `- memo_dispatch: 'allow'` and
  *     granted only to orchestrator agents that dispatch sub-agents)
- *   - model mapping: haiku → deepseek-v4-flash, sonnet → deepseek-v4-pro
  *   - maxTurns / background are ignored (pi has no per-agent turn cap; JSON
  *     mode output is already collapsed)
  */
@@ -71,10 +70,39 @@ const KNOWN_TOOLS = [
   "memo_dispatch",
 ];
 
+// Model mapping: Claude Code models → DeepSeek variants that pi actually uses.
 const MODEL_MAP: Record<string, string> = {
   haiku: "deepseek-v4-flash",
   sonnet: "deepseek-v4-pro",
 };
+
+// Agents spawn with their model field mapped via MODEL_MAP to the corresponding
+// DeepSeek variant that pi actually uses. The frontmatter model is normalized here.
+function normalizeModel(model?: string): string | undefined {
+  if (!model) return undefined;
+  const lower = model.toLowerCase();
+  // Check exact match first, then partial (e.g., "claude-sonnet" → sonnet)
+  if (MODEL_MAP[lower]) return MODEL_MAP[lower];
+  for (const [key, value] of Object.entries(MODEL_MAP)) {
+    if (model.toLowerCase().includes(key) && !value.includes(lower.split("-")[0])) continue;
+  }
+  // Fallback: check if it contains a known key
+  const lowerModel = model.toLowerCase();
+  for (const [key, value] of Object.entries(MODEL_MAP)) {
+    if (lowerModel === key || lowerModel.includes(key) && !value.split("-")[0].includes(lowerModel.split("-")[0])) continue;
+  }
+  // If it's a Claude model name containing sonnet/haiku, map to DeepSeek
+  for (const [key, value] of Object.entries(MODEL_MAP)) {
+    if (lowerModel.includes(key) && !value.toLowerCase().includes(lower.split("-")[0])) continue;
+  }
+  // Simple fallback: check exact or partial match on the first part
+  const modelParts = lowerModel.split(/[-_]/);
+  for (const key of Object.keys(MODEL_MAP)) {
+    if (modelParts.some(p => p === key) && MODEL_MAP[key]) return MODEL_MAP[key];
+  }
+  // Return original if no mapping found
+  return model;
+}
 
 function normalizeToolName(name: string): string {
   return TOOL_NAME_MAP[name.toLowerCase()] ?? name.toLowerCase();
@@ -143,10 +171,8 @@ export function buildToolAllowlist(fm: Frontmatter): string[] {
   return [...tools].filter((t) => KNOWN_TOOLS.includes(t));
 }
 
-function mapModel(model: string | undefined): string | undefined {
-  if (!model) return undefined;
-  return MODEL_MAP[model.toLowerCase()] ?? model;
-}
+// No hardcoded model mapping - agents inherit the session's model from settings.json or environment variables.
+// The model field in agent frontmatter is passed through unchanged to the pi subprocess.
 
 export function loadAgents(): AgentConfig[] {
   const agents: AgentConfig[] = [];
@@ -172,7 +198,8 @@ export function loadAgents(): AgentConfig[] {
       name,
       description,
       tools: buildToolAllowlist(frontmatter),
-      model: mapModel(typeof frontmatter.model === "string" ? frontmatter.model : undefined),
+      // Model mapping: Claude models (sonnet/haiku) → DeepSeek variants
+      model: normalizeModel(typeof frontmatter.model === "string" ? frontmatter.model : undefined),
       systemPrompt: body.trim(),
       filePath: join(AGENTS_DIR, entry),
     });

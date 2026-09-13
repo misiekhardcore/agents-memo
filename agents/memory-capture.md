@@ -1,7 +1,6 @@
 ---
 name: memory-capture
 description: Single CAPTURE-pipeline worker. Takes one chunk and files it as an atomic inbox note. Dispatched by `memo-braindump` for parallel processing when chunks are independent.
-model: haiku
 maxTurns: 10
 permissions: 
   - bash: 'allow'

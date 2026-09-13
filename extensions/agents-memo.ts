@@ -135,10 +135,7 @@ const DEFAULT_PAGE_CANDIDACY: PageCandidacyConfig = {
   threshold: 3,
 };
 
-const REFLECT_MODEL_DEFAULTS: ReflectModelConfig = {
-  provider: "deepseek",
-  id: "deepseek-v4-flash",
-};
+
 
 // Per-key validators for each nested block (type-gated merge). Declared as
 // typed constants so the merge helper infers T from the merged argument,
@@ -287,10 +284,10 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
     reflectUntouchedRuns:
       projectMemory.reflectUntouchedRuns ?? PROJECT_MEMORY_DEFAULTS.reflectUntouchedRuns,
   };
-  merged.reflectModel = {
-    provider: reflectModel.provider ?? REFLECT_MODEL_DEFAULTS.provider,
-    id: reflectModel.id ?? REFLECT_MODEL_DEFAULTS.id,
-  };
+  // No hardcoded defaults - reflectModel must be explicitly configured in settings.json
+  if (typeof reflectModel.provider === "string" && typeof reflectModel.id === "string") {
+    merged.reflectModel = { provider: reflectModel.provider, id: reflectModel.id };
+  }
   merged.memoryInjection = {
     sessionStart: memoryInjection.sessionStart ?? DEFAULT_MEMORY_INJECTION.sessionStart,
     reInjectOnCompact:
@@ -428,7 +425,12 @@ export function resolveVaultPath(cwd?: string): string | null {
     }
   }
   // Fallback: CWD contains a wiki/ subdirectory (resolve-vault.sh tier 2).
-  const dir = cwd ?? process.cwd();
+  // When called without an explicit cwd, only check Claude settings - don't
+  // fall back to process.cwd() which could incorrectly match the current repo.
+  if (cwd === undefined) {
+    return readClaudeVaultPath();
+  }
+  const dir = cwd;
   const cwdWiki = join(dir, "wiki");
   if (existsSync(cwdWiki) && statSync(cwdWiki).isDirectory()) {
     return dir;
@@ -799,7 +801,8 @@ type RequestAuth =
 
 // Resolve the reflection model + request auth: configured reflectModel first
 // (via the session's model registry, with a getModel fallback), then the
-// session's current model. Best-effort — null skips the reflection silently.
+// session's current model. No hardcoded defaults - must be explicitly configured.
+// Best-effort — null skips the reflection silently.
 async function pickReflectionModel(
   config: AgentsMemoConfig,
   ctx: ExtensionContext,
@@ -808,7 +811,8 @@ async function pickReflectionModel(
   apiKey?: string;
   headers?: Record<string, string>;
 } | null> {
-  const wanted = config.reflectModel ?? REFLECT_MODEL_DEFAULTS;
+  // No hardcoded defaults - if no reflectModel is configured, skip reflection entirely
+  if (!config.reflectModel) return null;
   const registry = (ctx.modelRegistry ?? {}) as unknown as {
     find?: (provider: string, id: string) => Model<Api> | undefined;
     getApiKeyAndHeaders?: (model: Model<Api>) => Promise<RequestAuth>;
@@ -816,7 +820,7 @@ async function pickReflectionModel(
   const findModel = (provider: string, id: string): Model<Api> | undefined =>
     registry.find?.(provider, id) ??
     (getModel as unknown as (p: string, i: string) => Model<Api> | undefined)(provider, id);
-  const candidates = [findModel(wanted.provider, wanted.id), ctx.model].filter(
+  const candidates = [findModel(config.reflectModel!.provider, config.reflectModel!.id), ctx.model].filter(
     (m): m is Model<Api> =>
       !!m &&
       typeof (m as { provider?: unknown }).provider === "string" &&
@@ -1781,9 +1785,41 @@ function persistVaultPath(vaultPath: string): boolean {
     const agentsMemo = (parsed.agentsMemo as Record<string, unknown>) ?? {};
     agentsMemo.vaultPath = vaultPath;
     parsed.agentsMemo = agentsMemo;
-    writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`);
-    return true;
-  } catch {
+    
+    // Phase 1: Safe write with explicit stream handling to prevent ERR_STREAM_DESTROYED
+    const fs = require("node:fs");
+    let fd: number | null = null;
+    try {
+      fd = fs.openSync(file, "w");
+      fs.writeSync(fd, `${JSON.stringify(parsed, null, 2)}\n`);
+      fs.closeSync(fd);
+      console.log("[agents-memo] persistVaultPath: successfully wrote settings.json");
+      return true;
+    } catch (err) {
+      const errStr = String(err);
+      if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+        console.error("[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED detected - stream cleanup issue");
+      } else {
+        console.error(`[agents-memo] persistVaultPath write error: ${errStr}`);
+      }
+      return false;
+    } finally {
+      if (fd !== null) {
+        try { fs.closeSync(fd); } catch (e) {
+          const eStr = String(e);
+          if (!eStr.includes("ERR_STREAM_DESTROYED")) {
+            console.error(`[agents-memo] persistVaultPath: close error: ${eStr}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    const errStr = String(err);
+    if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+      console.error("[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED - file descriptor invalid");
+    } else {
+      console.error(`[agents-memo] persistVaultPath failed: ${errStr}`);
+    }
     return false;
   }
 }
@@ -2223,18 +2259,23 @@ export default function (pi: ExtensionAPI) {
 
   // ── AC16: agent_end - reflect the run into project memory (or legacy daily) ─
   pi.on("agent_end", async (event: AgentEndEvent, ctx: ExtensionContext) => {
+    console.log(`[agents-memo] agent_end triggered, hasUI=${ctx.hasUI}`);
     // Consume the per-run flag first so reflection never double-fires and the
     // next run starts clean (agent_end fires before agent_settled in the pi
     // runtime: _emitExtensionEvent → _emitAgentSettled).
     const touched = vaultTouched;
     vaultTouched = false;
     const vaultPath = getVaultPath(ctx.cwd);
-    if (!vaultPath) return;
+    if (!vaultPath) {
+      console.log("[agents-memo] agent_end: no vault path, skipping");
+      return;
+    }
     const config = readPiSettings(ctx.cwd);
     if (config.projectMemory?.enabled === false) {
       // Legacy path: static global daily marker (sessions that opted out of
       // per-project pages keep the old behavior unchanged). Stays
       // touched-gated — untouched runs never write the legacy marker.
+      console.log("[agents-memo] agent_end: project memory disabled, using legacy path");
       if (touched)
         appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
       return;
@@ -2242,24 +2283,43 @@ export default function (pi: ExtensionAPI) {
     // Untouched runs reflect only when reflectUntouchedRuns is on (default
     // true): reflection is cheap and sessions that never wrote the vault can
     // still produce learnings worth distilling.
-    if (!touched && !config.projectMemory?.reflectUntouchedRuns) return;
+    if (!touched && !config.projectMemory?.reflectUntouchedRuns) {
+      console.log("[agents-memo] agent_end: no touches, skipping");
+      return;
+    }
 
     const slug = getProjectSlug(ctx.cwd);
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = now.toTimeString().slice(0, 5);
     const messages = (event.messages ?? []) as ReflectionMessage[];
-    if (messages.length === 0) return;
+    if (messages.length === 0) {
+      console.log("[agents-memo] agent_end: no messages, skipping");
+      return;
+    }
     // In-process complete() wrapped in withTimeout — never blocks the session
     // event loop and strictly bounded (a hung model call resolves null after
     // REFLECTION_MODEL_TIMEOUT_MS instead of freezing the session).
     // Working indicator during the learning pipeline (parity with
     // pi-self-learning's "learning" status); cleared in finally so a timed-out
     // reflection can never leave a stale indicator.
-    if (ctx.hasUI) ctx.ui.setWorkingMessage("learning");
+    console.log(`[agents-memo] agent_end: starting reflection, hasUI=${ctx.hasUI}`);
+    if (ctx.hasUI) {
+      try {
+        ctx.ui.setWorkingMessage("learning");
+        console.log("[agents-memo] UI: set working message to 'learning'");
+      } catch (err) {
+        const errStr = String(err);
+        console.error(`[agents-memo] agent_end: failed to set UI working message: ${errStr}`);
+      }
+    }
     try {
       const reflection = await runReflection(config, ctx, messages.slice(-8));
-      if (!reflection) return;
+      if (!reflection) {
+        console.log("[agents-memo] agent_end: no reflection generated");
+        return;
+      }
+      console.log(`[agents-memo] agent_end: reflection generated with ${reflection.mistakes.length} mistakes, ${reflection.fixes.length} fixes`);
       appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
       updateProjectCore(
         vaultPath,
@@ -2280,8 +2340,23 @@ export default function (pi: ExtensionAPI) {
           config.pageCandidacy?.threshold ?? DEFAULT_PAGE_CANDIDACY.threshold,
         );
       }
+    } catch (err) {
+      const errStr = String(err);
+      if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+        console.error(`[agents-memo] agent_end: ERR_STREAM_DESTROYED - stream cleanup issue during reflection`);
+      } else {
+        console.error(`[agents-memo] agent_end error: ${errStr}`);
+      }
     } finally {
-      if (ctx.hasUI) ctx.ui.setWorkingMessage();
+      if (ctx.hasUI) {
+        try {
+          ctx.ui.setWorkingMessage();
+          console.log("[agents-memo] UI: cleared working message");
+        } catch (err) {
+          const errStr = String(err);
+          console.error(`[agents-memo] agent_end: failed to clear UI working message: ${errStr}`);
+        }
+      }
     }
   });
 
