@@ -97,6 +97,7 @@ interface AgentsMemoConfig {
   autoPush?: boolean;
   projectMemory?: ProjectMemoryConfig;
   reflectModel?: ReflectModelConfig;
+  fallbackToDefaultModel?: boolean;
   memoryInjection?: MemoryInjectionConfig;
   pageCandidacy?: PageCandidacyConfig;
   // Jaccard bigram similarity threshold for /memo-wiki compact-core.
@@ -176,6 +177,21 @@ const MEMORY_INJECTION_SPEC: Record<keyof MemoryInjectionConfig, NestedKeyValida
 
 const PAGE_CANDIDACY_SPEC: Record<keyof PageCandidacyConfig, NestedKeyValidator> = {
   threshold: isCount,
+};
+
+const AGENTS_MEMO_SPEC: Record<keyof AgentsMemoConfig, NestedKeyValidator> = {
+  vaultPath: isString,
+  bootstrapReadHot: (v) => ["always", "on-demand", "never"].includes(v as string),
+  bootstrapReadIndex: (v) => ["always", "on-demand", "never"].includes(v as string),
+  autoCommit: isBoolean,
+  autoPush: isBoolean,
+  projectMemory: (v) => typeof v === "object",
+  reflectModel: (v) => typeof v === "object",
+  fallbackToDefaultModel: isBoolean,
+  memoryInjection: (v) => typeof v === "object",
+  pageCandidacy: (v) => typeof v === "object",
+  similarityThreshold: isCount,
+  autoCompactThreshold: isCount,
 };
 
 // Per-key first-wins, matching resolve-vault.sh / resolve-config.sh tier
@@ -303,6 +319,12 @@ export function readPiSettings(cwd?: string): AgentsMemoConfig {
   };
   merged.similarityThreshold = merged.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
   merged.autoCompactThreshold = merged.autoCompactThreshold ?? DEFAULT_AUTO_COMPACT_THRESHOLD;
+      if (typeof block.fallbackToDefaultModel === "boolean" && merged.fallbackToDefaultModel === undefined) {
+        merged.fallbackToDefaultModel = block.fallbackToDefaultModel;
+      }
+      if (typeof block.fallbackToDefaultModel === "boolean" && merged.fallbackToDefaultModel === undefined) {
+        merged.fallbackToDefaultModel = block.fallbackToDefaultModel;
+      }
   return merged;
 }
 
@@ -814,6 +836,14 @@ async function pickReflectionModel(
 } | null> {
   // No hardcoded defaults - if no reflectModel is configured, skip reflection entirely
   if (!config.reflectModel) return null;
+    if (config.fallbackToDefaultModel) {
+      return ctx.model ? { model: ctx.model } : null;
+    }
+    return null;
+    if (config.fallbackToDefaultModel) {
+      return ctx.model ? { model: ctx.model } : null;
+    }
+    return null;
   const registry = (ctx.modelRegistry ?? {}) as unknown as {
     find?: (provider: string, id: string) => Model<Api> | undefined;
     getApiKeyAndHeaders?: (model: Model<Api>) => Promise<RequestAuth>;
