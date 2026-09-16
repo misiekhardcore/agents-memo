@@ -6,8 +6,10 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "text-summary"],
     },
-    globals: true,
-    include: ["**/*.test.ts"], // Vitest unit tests; smoke tests use node scripts
+    globals: false,
+    include: ["tests/**/*.test.ts"],
+    // Shell regression suites (tests/regression/*.sh, tests/cli-smoke.sh) are
+    // driven from npm scripts; vitest covers the TS extension in-process.
     exclude: ["node_modules", "dist", ".forge"],
   },
 });

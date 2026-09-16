@@ -48,7 +48,7 @@
     "test": "npm run test:smoke && vitest run",
     "test:vitest": "vitest run",
     "test:watch": "vitest --watch",
-    "test:smoke": "node tests/extension-smoke.mjs && bash tests/cli-smoke.sh && bash tests/regression/daily-append.sh && bash tests/regression/read-canvas.sh && bash tests/regression/hot-cache-guard.sh && bash tests/regression/pi-settings-tier.sh && bash tests/regression/prune-lint-guard.sh && bash tests/regression/index-section-insert.sh && bash tests/regression/lint-duplicate-headings.sh",
+    "test:smoke": "bash tests/cli-smoke.sh && bash tests/regression/daily-append.sh && bash tests/regression/read-canvas.sh && bash tests/regression/hot-cache-guard.sh && bash tests/regression/pi-settings-tier.sh && bash tests/regression/prune-lint-guard.sh && bash tests/regression/index-section-insert.sh && bash tests/regression/lint-duplicate-headings.sh",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier . --check",
@@ -66,6 +66,7 @@
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.1",
     "@earendil-works/pi-coding-agent": "^0.84.1",
     "@eslint/js": "10.0.1",
     "@mariozechner/pi-ai": "^0.73.1",
@@ -75,7 +76,6 @@
     "eslint-config-prettier": "10.1.8",
     "git-cliff": "^2.13.1",
     "husky": "^9.1",
-    "jiti": "^2.7.0",
     "lint-staged": "^15.5",
     "prettier": "3.8.4",
     "tsup": "^8.0.0",

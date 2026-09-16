@@ -12,7 +12,7 @@
 # executes registered extension commands ("/"-prefixed) without calling the
 # model. Caveat: print mode has ctx.hasUI=false, so ui.input/confirm/notify
 # branches are skipped — headless covers the core path; interactive branches
-# are covered by tests/extension-smoke.mjs (mocked ui) or a TUI session.
+# are covered by tests/integration/extension-smoke.test.ts (mocked ui) or a TUI session.
 #
 # Usage:
 #   bin/e2e-command.sh "<command>" [--vault /abs/path] [--no-vault] [--keep]

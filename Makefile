@@ -7,6 +7,7 @@
 # running, so the target is safe in any environment.
 # Requires node_modules (jiti + tsc): run `npm ci` first.
 test:
+  npm run test
 	bash tests/cli-smoke.sh
 	bash tests/regression/daily-append.sh
 	bash tests/regression/read-canvas.sh
@@ -15,7 +16,6 @@ test:
 	bash tests/regression/prune-lint-guard.sh
 	bash tests/regression/index-section-insert.sh
 	bash tests/regression/lint-duplicate-headings.sh
-	node tests/extension-smoke.mjs
 
 e2e-build:
 	docker build -f tests/e2e/Dockerfile -t agents-memo-e2e:latest .

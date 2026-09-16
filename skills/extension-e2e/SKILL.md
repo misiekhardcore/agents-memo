@@ -17,7 +17,7 @@ path) and a mocked-ui harness (interactive branches).
 |-|-|
 |`bin/e2e-command.sh "<command>" [--vault PATH\|--no-vault] [--keep]`|Run any registered command headless in a real pi with an isolated HOME|
 |`bin/e2e-init.sh [--keep]`|Full /memo:init test: boots vault, asserts artifacts, checks no-vault path|
-|`tests/extension-smoke.mjs`|Mocked-ui harness — verifies registration + interactive branches|
+|`tests/integration/extension-smoke.test.ts`|Mocked-ui harness — verifies registration + interactive branches|
 
 ## Pattern 1 — isolated-HOME headless runner
 
@@ -33,7 +33,7 @@ removed unless `--keep` / `E2E_KEEP=1`.
 
 Headless pi has `ctx.hasUI=false`, so `ui.input/confirm/notify` branches are
 skipped. Registration + interactive branches are covered by
-`tests/extension-smoke.mjs` (mock pi with scripted ui). For a NEW command:
+`tests/integration/extension-smoke.test.ts` (mock pi with scripted ui). For a NEW command:
 add a `section("name — command registration")` asserting
 `mock.commands.find(c => c.name === "name")` and drive the handler with
 scripted ui answers.
@@ -69,6 +69,6 @@ assertions).
 
 1. Rebuild the extension first: `npm run build` (commands load from dist/).
 2. Run `bin/e2e-init.sh` for /memo:init; `bin/e2e-command.sh "<cmd>"` for others.
-3. Run `node tests/extension-smoke.mjs` for registration + ui branches.
+3. Run `npm run test` for registration + ui branches.
 4. Report artifacts + exit codes; the TUI (interactive) path still needs a human
    restart to verify dialogs visually — headless covers the core logic.
