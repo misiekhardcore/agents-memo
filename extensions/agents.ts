@@ -15,12 +15,12 @@
  *     mode output is already collapsed)
  */
 
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { getRuntime } from "./runtime";
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = join(pluginRoot, "agents");
@@ -69,44 +69,6 @@ const KNOWN_TOOLS = [
   "web_search",
   "memo_dispatch",
 ];
-
-// Model mapping: Claude Code models → DeepSeek variants that pi actually uses.
-const MODEL_MAP: Record<string, string> = {
-  haiku: "deepseek-v4-flash",
-  sonnet: "deepseek-v4-pro",
-};
-
-// Agents spawn with their model field mapped via MODEL_MAP to the corresponding
-// DeepSeek variant that pi actually uses. The frontmatter model is normalized here.
-function normalizeModel(model?: string): string | undefined {
-  if (!model) return undefined;
-  const lower = model.toLowerCase();
-  // Check exact match first, then partial (e.g., "claude-sonnet" → sonnet)
-  if (MODEL_MAP[lower]) return MODEL_MAP[lower];
-  for (const [key, value] of Object.entries(MODEL_MAP)) {
-    if (model.toLowerCase().includes(key) && !value.includes(lower.split("-")[0])) continue;
-  }
-  // Fallback: check if it contains a known key
-  const lowerModel = model.toLowerCase();
-  for (const [key, value] of Object.entries(MODEL_MAP)) {
-    if (
-      lowerModel === key ||
-      (lowerModel.includes(key) && !value.split("-")[0].includes(lowerModel.split("-")[0]))
-    )
-      continue;
-  }
-  // If it's a Claude model name containing sonnet/haiku, map to DeepSeek
-  for (const [key, value] of Object.entries(MODEL_MAP)) {
-    if (lowerModel.includes(key) && !value.toLowerCase().includes(lower.split("-")[0])) continue;
-  }
-  // Simple fallback: check exact or partial match on the first part
-  const modelParts = lowerModel.split(/[-_]/);
-  for (const key of Object.keys(MODEL_MAP)) {
-    if (modelParts.some((p) => p === key) && MODEL_MAP[key]) return MODEL_MAP[key];
-  }
-  // Return original if no mapping found
-  return model;
-}
 
 function normalizeToolName(name: string): string {
   return TOOL_NAME_MAP[name.toLowerCase()] ?? name.toLowerCase();
@@ -202,8 +164,7 @@ export function loadAgents(): AgentConfig[] {
       name,
       description,
       tools: buildToolAllowlist(frontmatter),
-      // Model mapping: Claude models (sonnet/haiku) → DeepSeek variants
-      model: normalizeModel(typeof frontmatter.model === "string" ? frontmatter.model : undefined),
+      model: typeof frontmatter.model === "string" ? frontmatter.model.toLowerCase() : undefined,
       systemPrompt: body.trim(),
       filePath: join(AGENTS_DIR, entry),
     });
@@ -258,7 +219,7 @@ function runPiSubprocess(
 ): Promise<SingleResult> {
   return new Promise((resolvePromise) => {
     const { command, args: cmdArgs } = getPiInvocation(args);
-    const child = spawn(command, cmdArgs, {
+    const child = getRuntime().spawn(command, cmdArgs, {
       cwd,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],

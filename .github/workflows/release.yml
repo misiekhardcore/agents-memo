@@ -30,7 +30,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
-      - run: node tests/extension-smoke.mjs
+      - run: npm run test
 
   release:
     name: Bump, tag, publish

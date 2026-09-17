@@ -5,12 +5,12 @@ ingest → query → save against a scratch Obsidian vault.
 
 ## Layout
 
-| Path | What | In git? |
+|Path|What|In git?|
 |-|-|-|
-| `ingest.tape` `query.tape` `save.tape` | vhs scene tapes (deterministic keystrokes) | yes |
-| `setup.sh` | rebuilds `runtime/` (seed vault + isolated pi config) | yes |
-| `README.md` | this file | yes |
-| `runtime/` | throwaway env — seeded vault, pi config (contains a copy of `~/.pi/agent/auth.json`!), project dir, scene recordings | **no** (gitignored) |
+|`ingest.tape` `query.tape` `save.tape`|vhs scene tapes (deterministic keystrokes)|yes|
+|`setup.sh`|rebuilds `runtime/` (seed vault + isolated pi config)|yes|
+|`README.md`|this file|yes|
+|`runtime/`|throwaway env — seeded vault, pi config (contains a copy of `~/.pi/agent/auth.json`!), project dir, scene recordings|**no** (gitignored)|
 
 ## Prerequisites
 
