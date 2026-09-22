@@ -189,13 +189,35 @@ export function persistVaultPath(vaultPath: string, ctx: ExtensionCommandContext
       return true;
     } catch (err) {
       const errStr = String(err);
-      if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+      if (
+        errStr.includes("ERR_STREAM_DESTROYED") ||
+        errStr.includes("stream was destroyed") ||
+        errStr.includes("EBADF")
+      ) {
         ctx.ui.notify(
-          "[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED detected - stream cleanup issue",
+          "[agents-memo] Failed to write settings - the file may be locked by another process",
+          "error",
+        );
+      } else if (errStr.includes("EACCES") || errStr.includes("permission")) {
+        // Permission denied - typically missing write permissions or vault read-only
+        ctx.ui.notify(
+          `[agents-memo] Cannot write to ${file}: check file permissions or ensure the vault is writable`,
+          "error",
+        );
+      } else if (errStr.includes("ENOENT") || errStr.includes("not found")) {
+        // Parent directory doesn't exist
+        ctx.ui.notify(
+          `[agents-memo] Cannot write to ${file}: parent directory missing - run 'obsidian create' for the vault`,
+          "error",
+        );
+      } else if (errStr.includes("EISDIR") || errStr.includes("is a directory")) {
+        // File path is actually a folder
+        ctx.ui.notify(
+          `[agents-memo] ${file} exists as a directory, not a file - check the vaultPath in settings.json`,
           "error",
         );
       } else {
-        ctx.ui.notify(`[agents-memo] persistVaultPath write error: ${errStr}`, "error");
+        ctx.ui.notify(`[agents-memo] Cannot write to ${file}: ${errStr}`, "error");
       }
       return false;
     } finally {
@@ -204,21 +226,45 @@ export function persistVaultPath(vaultPath: string, ctx: ExtensionCommandContext
           closeSync(fd);
         } catch (e) {
           const eStr = String(e);
-          if (!eStr.includes("ERR_STREAM_DESTROYED")) {
-            ctx.ui.notify(`[agents-memo] persistVaultPath: close error: ${eStr}`, "error");
+          if (eStr.includes("EACCES") || eStr.includes("permission")) {
+            // Permission issue during file descriptor cleanup
+            ctx.ui.notify(
+              `[agents-memo] Permission denied while closing ${file} - check vault write permissions`,
+              "error",
+            );
+          } else {
+            ctx.ui.notify(`[agents-memo] Failed to close ${file}: ${eStr}`, "warning");
           }
         }
       }
     }
   } catch (err) {
     const errStr = String(err);
-    if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+    if (errStr.includes("EACCES") || errStr.includes("permission")) {
+      // Permission denied at file open stage
       ctx.ui.notify(
-        "[agents-memo] persistVaultPath: ERR_STREAM_DESTROYED - file descriptor invalid",
+        `[agents-memo] Cannot open ${file} for writing: check vault write permissions`,
+        "error",
+      );
+    } else if (errStr.includes("ENOENT") || errStr.includes("not found")) {
+      // Parent directory doesn't exist
+      ctx.ui.notify(
+        `[agents-memo] Cannot open ${file}: parent directory missing - run 'obsidian create' for the vault`,
+        "error",
+      );
+    } else if (errStr.includes("EISDIR") || errStr.includes("is a directory")) {
+      // File path is actually a folder
+      ctx.ui.notify(
+        `[agents-memo] ${file} exists as a directory, not a file - verify vaultPath in settings.json`,
+        "error",
+      );
+    } else if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+      ctx.ui.notify(
+        `[agents-memo] Failed to write ${file} - the file may be locked by another process`,
         "error",
       );
     } else {
-      ctx.ui.notify(`[agents-memo] persistVaultPath failed: ${errStr}`, "error");
+      ctx.ui.notify(`[agents-memo] Failed to write ${file}: ${errStr}`, "error");
     }
     return false;
   }

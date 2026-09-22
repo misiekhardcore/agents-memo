@@ -491,7 +491,10 @@ export default function (pi: ExtensionAPI) {
     setVaultTouched(false);
     const vaultPath = getVaultPath(ctx.cwd);
     if (!vaultPath) {
-      ctx.ui.notify("[agents-memo] agent_end: no vault path, skipping", "warning");
+      ctx.ui.notify(
+        "[agents-memo] No vault configured for this run — initialize it with '/memo:init' command in the target directory",
+        "warning",
+      );
       return;
     }
     const config = readPiSettings(ctx.cwd);
@@ -503,11 +506,14 @@ export default function (pi: ExtensionAPI) {
         appendDailyReflection(vaultPath, "[agents-memo] session ended - vault was modified");
       return;
     }
-    // Untouched runs reflect only when reflectUntouchedRuns is on (default
-    // true): reflection is cheap and sessions that never wrote the vault can
-    // still produce learnings worth distilling.
+    // Untouched runs (no files written to vault) skip reflection when
+    // reflectUntouchedRuns is off. Reflection is cheap and sessions that never
+    // wrote the vault can still produce learnings worth distilling.
     if (!touched && !config.projectMemory?.reflectUntouchedRuns) {
-      ctx.ui.notify("[agents-memo] agent_end: no touches, skipping", "warning");
+      ctx.ui.notify(
+        "[agents-memo] No file changes this session — use '/memo-notes' to capture your thoughts",
+        "info",
+      );
       return;
     }
 
@@ -517,7 +523,10 @@ export default function (pi: ExtensionAPI) {
     const timeStr = now.toTimeString().slice(0, 5);
     const messages = event.messages ?? [];
     if (messages.length === 0) {
-      ctx.ui.notify("[agents-memo] agent_end: no messages, skipping", "warning");
+      ctx.ui.notify(
+        "[agents-memo] No conversation recorded this run — log your session with '/memo-daily'",
+        "info",
+      );
       return;
     }
     // In-process complete() wrapped in withTimeout — never blocks the session
@@ -529,22 +538,30 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasUI) {
       try {
         ctx.ui.setWorkingMessage("learning");
-      } catch (err) {
-        const errStr = String(err);
-        ctx.ui.notify(
-          `[agents-memo] agent_end: failed to set UI working message: ${errStr}`,
-          "error",
-        );
+      } catch {
+        /* Silently ignore UI state errors - the reflection will still run */
       }
     }
     try {
+      const hasReflectionModel = !!config.reflectModel; // { provider, id }
+      const usesFallbackModel = config.fallbackToDefaultModel ?? false;
+      if (!hasReflectionModel && !usesFallbackModel) {
+        ctx.ui.notify(
+          "[agents-memo] agent_end: no reflection model configured. To enable learning summaries:\n" +
+            "- Set 'reflectModel' in settings.json with provider and id (e.g., ollama/llama3.2), OR\n" +
+            "- Enable 'fallbackToDefaultModel: true' to use your current agent's model, OR\n" +
+            "- Disable project memory entirely by setting 'projectMemory.enabled: false'",
+          "warning",
+        );
+      }
+
       const reflection = await runReflection(config, ctx, messages.slice(-8));
       if (!reflection) {
         ctx.ui.notify("[agents-memo] agent_end: no reflection generated", "warning");
         return;
       }
       ctx.ui.notify(
-        `[agents-memo] agent_end: reflection generated with ${reflection.mistakes.length} mistakes, ${reflection.fixes.length} fixes`,
+        `[agents-memo] Agent reflection complete - learned ${reflection.fixes.length} prevention tips and logged ${reflection.mistakes.length} issues to avoid`,
       );
       appendProjectDailyEntry(vaultPath, slug, dateStr, timeStr, reflection);
       updateProjectCore(vaultPath, slug, dateStr, reflection, config.projectMemory?.maxCoreItems);
@@ -564,7 +581,7 @@ export default function (pi: ExtensionAPI) {
       const errStr = String(err);
       if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
         ctx.ui.notify(
-          `[agents-memo] agent_end: ERR_STREAM_DESTROYED - stream cleanup issue during reflection`,
+          "[agents-memo] Reflection timed out - the LLM is slow or unresponsive",
           "error",
         );
       } else {
@@ -574,12 +591,8 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) {
         try {
           ctx.ui.setWorkingMessage();
-        } catch (err) {
-          const errStr = String(err);
-          ctx.ui.notify(
-            `[agents-memo] agent_end: failed to clear UI working message: ${errStr}`,
-            "error",
-          );
+        } catch {
+          /* Silently ignore - the reflection has already completed */
         }
       }
     }
@@ -594,15 +607,16 @@ export default function (pi: ExtensionAPI) {
       "Promote cross-project learnings into wiki/global-core.md (deterministic sweep, no LLM)",
     handler: async (_args, ctx) => {
       const vaultPath = getVaultPath(ctx.cwd);
-      const config = readPiSettings(ctx.cwd);
       if (!vaultPath) {
-        if (ctx.hasUI) ctx.ui.notify("agents-memo: no vault resolved — cannot sweep", "error");
+        if (ctx.hasUI)
+          ctx.ui.notify("agents-memo: no vault configured — run /memo:init first", "error");
         return;
       }
+      const config = readPiSettings(ctx.cwd);
       if (config.projectMemory?.globalEnabled === false) {
         if (ctx.hasUI)
           ctx.ui.notify(
-            "agents-memo: global memory is disabled (projectMemory.globalEnabled=false)",
+            "agents-memo: global memory is disabled — enable projectMemory.globalEnabled:true in ~/.pi/agent/settings.json",
             "error",
           );
         return;
@@ -616,7 +630,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify(
           result.promoted > 0
             ? `agents-memo: promoted ${result.promoted} cross-project learning(s) into wiki/global-core.md`
-            : "agents-memo: nothing to promote (no entry appears in enough project cores)",
+            : "agents-memo: nothing to promote — no entry appears in enough project cores",
           "info",
         );
       }
@@ -631,15 +645,16 @@ export default function (pi: ExtensionAPI) {
     description: "Merge near-duplicate entries in the project core (Jaccard bigram similarity)",
     handler: async (_args, ctx) => {
       const vaultPath = getVaultPath(ctx.cwd);
-      const config = readPiSettings(ctx.cwd);
       if (!vaultPath) {
-        if (ctx.hasUI) ctx.ui.notify("agents-memo: no vault resolved — cannot compact", "error");
+        if (ctx.hasUI)
+          ctx.ui.notify("agents-memo: no vault configured — run /memo:init first", "error");
         return;
       }
+      const config = readPiSettings(ctx.cwd);
       if (config.projectMemory?.enabled === false) {
         if (ctx.hasUI)
           ctx.ui.notify(
-            "agents-memo: project memory is disabled (projectMemory.enabled=false)",
+            "agents-memo: project memory is disabled — enable projectMemory.enabled:true in ~/.pi/agent/settings.json",
             "error",
           );
         return;
@@ -650,7 +665,7 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) {
         ctx.ui.notify(
           result === null
-            ? "agents-memo: compact failed (core.md read error)"
+            ? `agents-memo: compact failed — check wiki/projects/${slug}/core.md exists`
             : result > 0
               ? `agents-memo: compacted ${result} near-duplicate pair(s) in wiki/projects/${slug}/core.md`
               : `agents-memo: nothing to compact in wiki/projects/${slug}/core.md`,
