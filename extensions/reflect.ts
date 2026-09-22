@@ -190,8 +190,6 @@ export async function runReflection(
       controller,
     );
 
-    ctx.ui.notify(JSON.stringify({ response }, null, 2));
-
     // Response extraction stays the same (response still has a content array)
     const allText = response.content
       .filter(
@@ -206,9 +204,59 @@ export async function runReflection(
       .join("\n")
       .trim();
 
-    return allText ? parseReflectionJson(allText) : null;
+    if (!allText) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: model returned empty response — check your API key in ~/.pi/agent/settings.json",
+        "error",
+      );
+      return null;
+    }
+
+    const parsed = parseReflectionJson(allText);
+    if (!parsed) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: could not parse model response — try a different model (reflectModel.provider/reflectModel.id in ~/.pi/agent/settings.json)",
+        "error",
+      );
+      return null;
+    }
+
+    return parsed;
   } catch (e) {
-    ctx.ui.notify(String(e));
+    const errStr = String(e);
+    // API key issues
+    if (
+      errStr.includes("401") ||
+      errStr.includes("authentication failed") ||
+      errStr.includes("invalid token") ||
+      errStr.includes("API key")
+    ) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: API authentication failed — add reflectModel in ~/.pi/agent/settings.json with a working model and key",
+        "error",
+      );
+    } else if (
+      errStr.includes("429") ||
+      errStr.includes("rate limit") ||
+      errStr.includes("too many requests")
+    ) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: rate limited — try a smaller model or add fallbackToDefaultModel:true",
+        "error",
+      );
+    } else if (errStr.includes("ERR_STREAM_DESTROYED") || errStr.includes("stream was destroyed")) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: model connection dropped — try a smaller model or fallbackToDefaultModel:true",
+        "error",
+      );
+    } else if (errStr.includes("timed out") || errStr.includes("timeout")) {
+      ctx.ui.notify(
+        "[agents-memo] reflection: model timed out (>60s) — try a faster provider or fallbackToDefaultModel:true",
+        "error",
+      );
+    } else {
+      ctx.ui.notify(`[agents-memo] reflection error: ${errStr}`, "error");
+    }
     return null;
   }
 }
