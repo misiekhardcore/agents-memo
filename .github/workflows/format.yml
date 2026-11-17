@@ -10,5 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - run: npm run format:md:check
+      - uses: actions/checkout@v4.4.0
+      - name: Install pnpm and Node.js
+        uses: pnpm/setup@v2.0.2
+        with:
+          runtime: node@24
+          cache: true
+      - run: pnpm run format:md:check

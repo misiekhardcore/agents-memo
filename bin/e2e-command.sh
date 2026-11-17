@@ -95,7 +95,7 @@ base = os.path.dirname(real_settings)  # as loaded, may be a symlink path
 home = os.path.expanduser("~")
 out = []
 for p in d.get("packages", []):
-    if p.startswith("npm:") or p.startswith("/"):
+    if p.startswith("pnpm:") or p.startswith("/"):
         out.append(p)
     elif p.startswith("~/"):
         out.append(os.path.join(home, p[2:]))

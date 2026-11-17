@@ -20,10 +20,10 @@ You are a build agent responsible for implementing features using Test-Driven De
 Run the project validation loop before reporting completion:
 
 ```bash
-npm run fix
-npm run lint
-npm run typecheck
-npm run test
+pnpm run fix
+pnpm run lint
+pnpm run typecheck
+pnpm run test
 ```
 
 If you modified files that have auto-generated artefacts, regenerate them and
@@ -50,7 +50,7 @@ Your final JSON block must follow this structure:
 ```
 
 - Never report `passed: true` if any validation command produced errors or non-zero exit codes.
-- If a validation command has no output (e.g. `npm run fix` with no fixes needed), note that explicitly: `(no output — clean)`.
+- If a validation command has no output (e.g. `pnpm run fix` with no fixes needed), note that explicitly: `(no output — clean)`.
 - If you modified files with auto-generated artefacts, include the regeneration output as well.
 
 ## Commit Policy — do NOT commit

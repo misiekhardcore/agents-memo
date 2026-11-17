@@ -5,9 +5,9 @@
 # insert guard, lint-duplicate-headings guard, hot-cache guard.
 # cli-smoke/daily-append/read-canvas skip with exit 0 when Obsidian is not
 # running, so the target is safe in any environment.
-# Requires node_modules (jiti + tsc): run `npm ci` first.
+# Requires node_modules (jiti + tsc): run `pnpm ci` first.
 test:
-  npm run test
+  pnpm run test
 	bash tests/cli-smoke.sh
 	bash tests/regression/daily-append.sh
 	bash tests/regression/read-canvas.sh

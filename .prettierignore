@@ -16,3 +16,4 @@ agents/
 docs/
 .github/
 *.md
+pnpm-lock.yaml

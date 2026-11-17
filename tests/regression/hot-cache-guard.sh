@@ -22,7 +22,7 @@ PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GUARD="$PLUGIN_ROOT/hooks/guard-hot-cache.sh"
 
 # Skip if guard hook doesn't exist (may be deployed separately)
-# Exit gracefully so npm test passes; the extension's agent_end handler
+# Exit gracefully so pnpm test passes; the extension's agent_end handler
 # provides runtime protection even without this regression script.
 if [ ! -x "$GUARD" ]; then
   echo "regression/hot-cache-guard: $GUARD missing or not executable — skipping" >&2
