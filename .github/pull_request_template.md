@@ -8,7 +8,7 @@
 - <!-- bullet list of changes -->
 
 ## Validation
-- [ ] `npm run check` passes
+- [ ] `pnpm run check` passes
 - [ ] Manual smoke test run (if applicable)
 
 ## Checklist

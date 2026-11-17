@@ -67,8 +67,8 @@ assertions).
 
 ## Workflow
 
-1. Rebuild the extension first: `npm run build` (commands load from dist/).
+1. Rebuild the extension first: `pnpm run build` (commands load from dist/).
 2. Run `bin/e2e-init.sh` for /memo:init; `bin/e2e-command.sh "<cmd>"` for others.
-3. Run `npm run test` for registration + ui branches.
+3. Run `pnpm run test` for registration + ui branches.
 4. Report artifacts + exit codes; the TUI (interactive) path still needs a human
    restart to verify dialogs visually — headless covers the core logic.

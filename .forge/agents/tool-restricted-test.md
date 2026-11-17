@@ -12,7 +12,7 @@ tools:
   - ls:packages/**
   - ls:.
   - bash:git *
-  - bash:npm *
+  - bash:pnpm *
   - write:src/**
   - edit:src/**
   - find:src/**
@@ -26,7 +26,7 @@ Test-only agent spec used by the tool pattern restriction end-to-end test.
 
 |Tool|Input field|Restriction|
 |-|-|-|
-|bash|`command`|Only `git *` and `npm *`|
+|bash|`command`|Only `git *` and `pnpm *`|
 |write|`path`|Only `src/**`|
 |grep|`path`|Only `src/**` and `packages/**`|
 |read|`path`|`src/**`, `packages/**`, `*.md`, `*.json`|

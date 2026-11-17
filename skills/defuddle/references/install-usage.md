@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-npm install -g defuddle-cli
+pnpm install -g defuddle-cli
 ```
 
 Verify: `defuddle --version`

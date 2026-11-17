@@ -196,7 +196,7 @@ function finalText(messages: unknown[]): string {
 }
 
 // Re-invoke the running pi binary (mirrors the subagent example): when the
-// process runs from a real script (npm install), spawn `node cli.js ...`;
+// process runs from a real script (pnpm install), spawn `node cli.js ...`;
 // when it's a compiled binary, spawn the binary itself; otherwise use PATH.
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
   const currentScript = process.argv[1];

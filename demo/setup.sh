@@ -50,7 +50,7 @@ base = os.path.expanduser("~/.pi/agent")
 home = os.path.expanduser("~")
 out = []
 for p in d.get("packages", []):
-    if p.startswith("npm:") or p.startswith("/"):
+    if p.startswith("pnpm:") or p.startswith("/"):
         out.append(p)
     elif p.startswith("~/"):
         out.append(os.path.join(home, p[2:]))

@@ -14,8 +14,7 @@ const REFLECTION_MODEL_TIMEOUT_MS = 60_000;
 const REFLECTION_MAX_TOKENS = 2000;
 
 type RequestAuth =
-  | { ok: true; apiKey?: string; headers?: Record<string, string> }
-  | { ok: false; error: string };
+  { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
 
 // ─── Reflection engine ────────────────────────────────────────────────────────
 // Per-project memory (docs/per-project-memory.md): on agent_end, distill the

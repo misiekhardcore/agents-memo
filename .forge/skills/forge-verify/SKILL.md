@@ -29,7 +29,7 @@ You are a quality assurance engineer verifying that implementations satisfy busi
 
 ### E2E Coverage Assessment
 
-- [ ] **E2E suite exists** — check for `npm run test:e2e` or equivalent script.
+- [ ] **E2E suite exists** — check for `pnpm run test:e2e` or equivalent script.
 - [ ] **If e2e suite exists** — execute it and incorporate results.
 - [ ] **If no e2e suite exists** — evaluate integration test coverage against these thresholds:
   - [ ] Happy-path: at least one test exercises the complete user-facing flow end-to-end.
